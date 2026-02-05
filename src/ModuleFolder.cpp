@@ -18,7 +18,8 @@ namespace {
 constexpr UINT kColumnName = 0;
 constexpr UINT kColumnBase = 1;
 constexpr UINT kColumnSize = 2;
-constexpr UINT kColumnCount = 3;
+constexpr UINT kColumnPath = 3;
+constexpr UINT kColumnCount = 4;
 
 UINT CF_SHELLIDLIST() {
     static UINT format = RegisterClipboardFormatW(CFSTR_SHELLIDLIST);
@@ -390,6 +391,13 @@ IFACEMETHODIMP ModuleFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1,
                  else if (size1 > size2) result = 1;
             }
             break;
+        case kColumnPath:
+            {
+                 auto path1 = Pidl::GetPath(pidl1);
+                 auto path2 = Pidl::GetPath(pidl2);
+                 result = lstrcmpiW(path1.c_str(), path2.c_str());
+            }
+            break;
         default:
              {
                  auto path1 = Pidl::GetPath(pidl1);
@@ -544,9 +552,12 @@ IFACEMETHODIMP ModuleFolder::GetDefaultColumn(DWORD, ULONG* sort, ULONG* display
     return S_OK;
 }
 
-IFACEMETHODIMP ModuleFolder::GetDefaultColumnState(UINT, SHCOLSTATEF* state) {
+IFACEMETHODIMP ModuleFolder::GetDefaultColumnState(UINT column, SHCOLSTATEF* state) {
     if (!state) {
         return E_POINTER;
+    }
+    if (column >= kColumnCount) {
+        return E_INVALIDARG;
     }
     *state = SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT;
     return S_OK;
@@ -571,6 +582,8 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
             return MakeStrRet(L"Base Address", &details->str);
         case kColumnSize:
             return MakeStrRet(L"Size", &details->str);
+        case kColumnPath:
+            return MakeStrRet(L"Path", &details->str);
         default:
             return E_INVALIDARG;
         }
@@ -602,6 +615,9 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
         StringCchPrintfW(text, ARRAYSIZE(text), L"0x%X (%u)", size, size);
         Log::Write(Log::Level::Trace, L"GetDetailsOf: Size=%s for %s", text, path.c_str());
         return MakeStrRet(text, &details->str);
+    }
+    case kColumnPath: {
+        return MakeStrRet(path.c_str(), &details->str);
     }
     default:
         return E_INVALIDARG;
