@@ -1,0 +1,256 @@
+#include "ModuleFolder.h"
+#include "Log.h"
+
+#include <shlobj.h>
+#include <strsafe.h>
+#include <wrl/module.h>
+
+extern HRESULT CreateModuleFolderClassFactory(REFIID riid, void** ppv);
+
+HMODULE g_module = nullptr;
+
+namespace {
+HRESULT SetStringValue(HKEY key, const wchar_t* name, const wchar_t* value) {
+    return RegSetValueExW(key, name, 0, REG_SZ,
+        reinterpret_cast<const BYTE*>(value),
+        static_cast<DWORD>((wcslen(value) + 1) * sizeof(wchar_t)));
+}
+
+HRESULT SetDwordValue(HKEY key, const wchar_t* name, DWORD value) {
+    return RegSetValueExW(key, name, 0, REG_DWORD,
+        reinterpret_cast<const BYTE*>(&value),
+        static_cast<DWORD>(sizeof(value)));
+}
+
+HRESULT RegisterClsid(const wchar_t* modulePath) {
+    HKEY clsidKey = nullptr;
+    HRESULT hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        HKEY_CURRENT_USER,
+        L"Software\\Classes\\CLSID",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &clsidKey,
+        nullptr));
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"RegCreateKeyExW CLSID failed: 0x%08X", hr);
+        return hr;
+    }
+
+    HKEY classKey = nullptr;
+    hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        clsidKey,
+        kModuleFolderClsidString,
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &classKey,
+        nullptr));
+    RegCloseKey(clsidKey);
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"RegCreateKeyExW CLSID subkey failed: 0x%08X", hr);
+        return hr;
+    }
+
+    hr = SetStringValue(classKey, nullptr, kModuleFolderDisplayName);
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"Set CLSID display name failed: 0x%08X", hr);
+        RegCloseKey(classKey);
+        return hr;
+    }
+
+    SetDwordValue(classKey, L"System.IsPinnedToNameSpaceTree", 1);
+
+    HKEY categoryKey = nullptr;
+    HRESULT catHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        classKey,
+        L"Implemented Categories\\{00021490-0000-0000-C000-000000000046}",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &categoryKey,
+        nullptr));
+    if (SUCCEEDED(catHr)) {
+        RegCloseKey(categoryKey);
+    }
+
+    HKEY inprocKey = nullptr;
+    hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        classKey,
+        L"InProcServer32",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &inprocKey,
+        nullptr));
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"RegCreateKeyExW InProcServer32 failed: 0x%08X", hr);
+        RegCloseKey(classKey);
+        return hr;
+    }
+
+    hr = SetStringValue(inprocKey, nullptr, modulePath);
+    if (SUCCEEDED(hr)) {
+        hr = SetStringValue(inprocKey, L"ThreadingModel", L"Apartment");
+    }
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"Set InProcServer32 values failed: 0x%08X", hr);
+    }
+    RegCloseKey(inprocKey);
+
+    HKEY shellFolderKey = nullptr;
+    HRESULT shellHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        classKey,
+        L"ShellFolder",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &shellFolderKey,
+        nullptr));
+    if (SUCCEEDED(shellHr)) {
+        SetDwordValue(shellFolderKey, L"Attributes", 0xF080004D);
+        SetDwordValue(shellFolderKey, L"FolderValueFlags", 0x28);
+        RegCloseKey(shellFolderKey);
+    }
+
+    HKEY iconKey = nullptr;
+    HRESULT iconHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        classKey,
+        L"DefaultIcon",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &iconKey,
+        nullptr));
+    if (SUCCEEDED(iconHr)) {
+        wchar_t iconValue[MAX_PATH * 2] = {};
+        StringCchPrintfW(iconValue, ARRAYSIZE(iconValue), L"%s,-1", modulePath);
+        SetStringValue(iconKey, nullptr, iconValue);
+        RegCloseKey(iconKey);
+    }
+
+    RegCloseKey(classKey);
+    Log::Write(Log::Level::Info, L"Registered CLSID %s", kModuleFolderClsidString);
+    return hr;
+}
+
+HRESULT RegisterNamespace() {
+    HKEY nsKey = nullptr;
+    HRESULT hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace",
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &nsKey,
+        nullptr));
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"RegCreateKeyExW MyComputer NameSpace failed: 0x%08X", hr);
+        return hr;
+    }
+
+    HKEY clsidKey = nullptr;
+    hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
+        nsKey,
+        kModuleFolderClsidString,
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE,
+        nullptr,
+        &clsidKey,
+        nullptr));
+    RegCloseKey(nsKey);
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"RegCreateKeyExW NameSpace CLSID failed: 0x%08X", hr);
+        return hr;
+    }
+
+    hr = SetStringValue(clsidKey, nullptr, kModuleFolderDisplayName);
+    RegCloseKey(clsidKey);
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"Set NameSpace display name failed: 0x%08X", hr);
+    } else {
+        Log::Write(Log::Level::Info, L"Registered NameSpace entry for %s", kModuleFolderClsidString);
+    }
+    return hr;
+}
+
+HRESULT UnregisterTree(HKEY root, const wchar_t* subkey) {
+    return HRESULT_FROM_WIN32(RegDeleteTreeW(root, subkey));
+}
+} // namespace
+
+BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        g_module = module;
+        Microsoft::WRL::Module<Microsoft::WRL::InProc>::GetModule().Create();
+        DisableThreadLibraryCalls(module);
+    }
+    return TRUE;
+}
+
+extern "C" STDAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void** ppv) {
+    // Log::Write(Log::Level::Info, L"DllGetClassObject called: clsid=%s", kModuleFolderClsidString);
+    if (!IsEqualCLSID(clsid, CLSID_ModuleFolder)) {
+        return CLASS_E_CLASSNOTAVAILABLE;
+    }
+    return CreateModuleFolderClassFactory(riid, ppv);
+}
+
+extern "C" STDAPI DllCanUnloadNow() {
+    auto& module = Microsoft::WRL::Module<Microsoft::WRL::InProc>::GetModule();
+    return (module.GetObjectCount() == 0) ? S_OK : S_FALSE;
+}
+
+extern "C" STDAPI DllRegisterServer() {
+    wchar_t modulePath[MAX_PATH] = {};
+    if (!GetModuleFileNameW(g_module, modulePath, ARRAYSIZE(modulePath))) {
+        Log::Write(Log::Level::Error, L"GetModuleFileNameW failed: %lu", GetLastError());
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    Log::Write(Log::Level::Info, L"DllRegisterServer: %s", modulePath);
+    HRESULT hr = RegisterClsid(modulePath);
+    if (SUCCEEDED(hr)) {
+        hr = RegisterNamespace();
+    }
+    if (FAILED(hr)) {
+        Log::Write(Log::Level::Error, L"DllRegisterServer failed: 0x%08X", hr);
+    }
+
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    return hr;
+}
+
+extern "C" STDAPI DllUnregisterServer() {
+    wchar_t clsidPath[MAX_PATH] = {};
+    StringCchPrintfW(clsidPath, ARRAYSIZE(clsidPath),
+        L"Software\\Classes\\CLSID\\%s", kModuleFolderClsidString);
+    UnregisterTree(HKEY_CURRENT_USER, clsidPath);
+
+    wchar_t nsPath[MAX_PATH] = {};
+    StringCchPrintfW(nsPath, ARRAYSIZE(nsPath),
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace\\%s",
+        kModuleFolderClsidString);
+    UnregisterTree(HKEY_CURRENT_USER, nsPath);
+
+    Log::Write(Log::Level::Info, L"DllUnregisterServer completed");
+
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    return S_OK;
+}

@@ -1,0 +1,5 @@
+#include <windows.h>
+
+#define IDI_PLACEHOLDER 1
+
+IDI_PLACEHOLDER ICON "placeholder.ico"
