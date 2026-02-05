@@ -496,8 +496,8 @@ IFACEMETHODIMP ModuleFolder::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY ap
     if (!rgfInOut) {
         return E_POINTER;
     }
-    SFGAOF folderAttrs = SFGAO_FOLDER | SFGAO_HASSUBFOLDER | SFGAO_BROWSABLE;
-    SFGAOF itemAttrs = SFGAO_STREAM | SFGAO_READONLY;
+    SFGAOF folderAttrs = SFGAO_FOLDER | SFGAO_HASSUBFOLDER | SFGAO_BROWSABLE | SFGAO_DROPTARGET;
+    SFGAOF itemAttrs = SFGAO_STREAM | SFGAO_READONLY | SFGAO_DROPTARGET;
     SFGAOF attrs = (cidl == 0 || !apidl) ? folderAttrs : itemAttrs;
     if (*rgfInOut) {
         *rgfInOut &= attrs;
@@ -688,36 +688,90 @@ IFACEMETHODIMP ModuleFolder::MapColumnToSCID(UINT column, SHCOLUMNID* pscid) {
     */
 }
 
-IFACEMETHODIMP ModuleFolder::DragEnter(IDataObject* dataObject, DWORD, POINTL, DWORD* effect) {
+IFACEMETHODIMP ModuleFolder::DragEnter(IDataObject* dataObject, DWORD keyState, POINTL, DWORD* effect) {
     if (!effect) {
         return E_POINTER;
     }
-    if (SupportsDropFormat(dataObject)) {
-        *effect = DROPEFFECT_COPY;
-        Log::Write(Log::Level::Info, L"DragEnter: accepted");
+    DWORD inputEffect = *effect;
+    canDrop_ = SupportsDropFormat(dataObject);
+    if (canDrop_) {
+        // Prefer Copy, then Link, then Move (if necessary, but treat as Copy or similar?)
+        // Strictly speaking we should only accept what we do. We do "LoadLibrary". This is like "Opening" or "Copying".
+        // It is NOT a move (we don't delete source).
+        if (*effect & DROPEFFECT_COPY) {
+            *effect = DROPEFFECT_COPY;
+        } else if (*effect & DROPEFFECT_LINK) {
+            *effect = DROPEFFECT_LINK;
+        } else if (*effect & DROPEFFECT_MOVE) {
+            // Some operations (like Cut) might only offer MOVE.
+            // If we accept MOVE, the source might delete the file.
+            // For safety, we should probably stick to COPY/LINK.
+            // If the user *really* Cut, maybe we should just allow Copy semantics if possible?
+            // But we can't force source to Copy if it only offers Move.
+            // Let's stick to COPY/LINK. If User Cut, it won't be supported. This is safer.
+             // *effect = DROPEFFECT_MOVE; 
+             *effect = DROPEFFECT_NONE;
+             canDrop_ = false;
+        } else {
+            *effect = DROPEFFECT_NONE;
+            canDrop_ = false;
+        }
     } else {
         *effect = DROPEFFECT_NONE;
-        Log::Write(Log::Level::Info, L"DragEnter: rejected");
     }
+    Log::Write(Log::Level::Info, L"DragEnter: %s (In: 0x%X, Out: 0x%X, Key: 0x%X)", canDrop_ ? L"accepted" : L"rejected", inputEffect, *effect, keyState);
     return S_OK;
 }
 
-IFACEMETHODIMP ModuleFolder::DragOver(DWORD, POINTL, DWORD* effect) {
+IFACEMETHODIMP ModuleFolder::DragOver(DWORD keyState, POINTL, DWORD* effect) {
     if (!effect) {
         return E_POINTER;
     }
-    *effect = DROPEFFECT_COPY;
+    UNREFERENCED_PARAMETER(keyState);
+    DWORD input = *effect;
+    if (canDrop_) {
+        // Apply same logic as DragEnter to maintain consistency
+        if (*effect & DROPEFFECT_COPY) {
+            *effect = DROPEFFECT_COPY;
+        } else if (*effect & DROPEFFECT_LINK) {
+            *effect = DROPEFFECT_LINK;
+        } else {
+            *effect = DROPEFFECT_NONE;
+        }
+    } else {
+        *effect = DROPEFFECT_NONE;
+    }
+    // Reduce logspam by checking if effect changed or if it's the first log?
+    // We can't really trace every DragOver easily without spam.
+    // But since user says "Paste does not work", we want to see if DragOver is called.
+    static DWORD lastInput = 0xFFFFFFFF;
+    static DWORD lastOutput = 0xFFFFFFFF;
+    if (input != lastInput || *effect != lastOutput) {
+         Log::Write(Log::Level::Trace, L"DragOver: In: 0x%X, Out: 0x%X", input, *effect);
+         lastInput = input;
+         lastOutput = *effect;
+    }
     return S_OK;
 }
 
 IFACEMETHODIMP ModuleFolder::DragLeave() {
+    canDrop_ = false;
+    Log::Write(Log::Level::Info, L"DragLeave");
     return S_OK;
 }
 
 IFACEMETHODIMP ModuleFolder::Drop(IDataObject* dataObject, DWORD, POINTL, DWORD* effect) {
     if (effect) {
-        *effect = DROPEFFECT_COPY;
+        if (*effect & DROPEFFECT_COPY) {
+            *effect = DROPEFFECT_COPY;
+        } else if (*effect & DROPEFFECT_LINK) {
+            *effect = DROPEFFECT_LINK;
+        } else {
+            *effect = DROPEFFECT_NONE;
+        }
     }
+    canDrop_ = false;
+
     auto paths = ExtractDropPaths(dataObject);
     Log::Write(Log::Level::Info, L"Drop received %zu paths", paths.size());
     if (!paths.empty()) {

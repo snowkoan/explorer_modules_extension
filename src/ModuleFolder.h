@@ -67,4 +67,5 @@ public:
 
 private:
     PIDLIST_ABSOLUTE rootPidl_ = nullptr;
+    bool canDrop_ = false;
 };
