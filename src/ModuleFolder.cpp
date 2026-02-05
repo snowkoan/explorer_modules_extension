@@ -302,10 +302,10 @@ IFACEMETHODIMP ModuleFolder::EnumObjects(HWND, SHCONTF flags, IEnumIDList** enum
     if (!enumIdList) {
         return E_POINTER;
     }
+    *enumIdList = nullptr;
     if (!(flags & SHCONTF_NONFOLDERS)) {
-        *enumIdList = nullptr;
         Log::Write(Log::Level::Info, L"EnumObjects skipped (NONFOLDERS not requested)");
-        return S_OK;
+        return S_FALSE;
     }
 
     std::vector<PIDLIST_RELATIVE> items;
@@ -326,6 +326,10 @@ IFACEMETHODIMP ModuleFolder::EnumObjects(HWND, SHCONTF flags, IEnumIDList** enum
     if (!enumerator) {
         Log::Write(Log::Level::Error, L"EnumIDList allocation failed");
         return E_OUTOFMEMORY;
+    }
+    if (items.empty()) {
+        Log::Write(Log::Level::Info, L"EnumObjects returning 0 items");
+        return S_FALSE;
     }
     Log::Write(Log::Level::Info, L"EnumObjects returning %zu items", items.size());
     return enumerator.CopyTo(enumIdList);
