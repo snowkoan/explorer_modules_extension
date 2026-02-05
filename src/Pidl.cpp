@@ -6,6 +6,13 @@
 
 namespace Pidl {
 namespace {
+    // Offsets within the data section (after cb)
+    constexpr size_t kOffsetSignature = 0;
+    constexpr size_t kOffsetBaseAddress = kOffsetSignature + sizeof(DWORD);
+    constexpr size_t kOffsetSize = kOffsetBaseAddress + sizeof(UINT64);
+    constexpr size_t kOffsetPath = kOffsetSize + sizeof(DWORD);
+    constexpr size_t kFixedDataSize = kOffsetPath;
+
 PIDLIST_RELATIVE AllocatePidl(size_t dataSize) {
     const size_t totalSize = sizeof(USHORT) + dataSize + sizeof(USHORT);
     auto pidl = static_cast<PIDLIST_RELATIVE>(CoTaskMemAlloc(totalSize));
@@ -25,26 +32,39 @@ DWORD* SignaturePtr(PCUIDLIST_RELATIVE pidl) {
         return nullptr;
     }
     auto bytes = reinterpret_cast<const BYTE*>(pidl);
-    return reinterpret_cast<DWORD*>(const_cast<BYTE*>(bytes + sizeof(USHORT)));
+    return reinterpret_cast<DWORD*>(const_cast<BYTE*>(bytes + sizeof(USHORT) + kOffsetSignature));
 }
 } // namespace
 
 PIDLIST_ABSOLUTE CreateRoot() {
-    return CreateFromPath(L"");
+    return CreateFromPath(L"", nullptr, 0);
 }
 
-PIDLIST_RELATIVE CreateFromPath(const std::wstring& path) {
-    const size_t dataSize = sizeof(DWORD) + (path.size() + 1) * sizeof(wchar_t);
+PIDLIST_RELATIVE CreateFromPath(const std::wstring& path, void* baseAddress, DWORD size) {
+    const size_t pathSize = (path.size() + 1) * sizeof(wchar_t);
+    const size_t dataSize = kFixedDataSize + pathSize;
     auto pidl = AllocatePidl(dataSize);
     if (!pidl) {
         Log::Write(Log::Level::Error, L"CreateFromPath allocation failed");
         return nullptr;
     }
     auto bytes = reinterpret_cast<BYTE*>(pidl);
-    auto signature = reinterpret_cast<DWORD*>(bytes + sizeof(USHORT));
-    *signature = kSignature;
-    auto str = reinterpret_cast<wchar_t*>(bytes + sizeof(USHORT) + sizeof(DWORD));
-    memcpy(str, path.c_str(), (path.size() + 1) * sizeof(wchar_t));
+    BYTE* data = bytes + sizeof(USHORT);
+
+    // Signature
+    DWORD sig = kSignature;
+    memcpy(data + kOffsetSignature, &sig, sizeof(DWORD));
+
+    // Base Address
+    UINT64 addr = reinterpret_cast<UINT64>(baseAddress);
+    memcpy(data + kOffsetBaseAddress, &addr, sizeof(UINT64));
+
+    // Size
+    memcpy(data + kOffsetSize, &size, sizeof(DWORD));
+
+    // Path
+    memcpy(data + kOffsetPath, path.c_str(), pathSize);
+
     return pidl;
 }
 
@@ -74,32 +94,58 @@ bool IsOurPidl(PCUIDLIST_RELATIVE pidl) {
         return false;
     }
     const USHORT cb = pidl->mkid.cb;
-    if (cb < sizeof(USHORT) + sizeof(DWORD)) {
+    if (cb < sizeof(USHORT) + kFixedDataSize) {
         return false;
     }
     auto signature = SignaturePtr(pidl);
     return signature && *signature == kSignature;
 }
 
-std::wstring GetPath(PCUIDLIST_RELATIVE pidl) {
-    if (!pidl) {
-        Log::Write(Log::Level::Warn, L"GetPath called with null PIDL");
-        return L"";
+PCUIDLIST_RELATIVE GetOurItem(PCUIDLIST_RELATIVE pidl) {
+     if (!pidl) {
+        return nullptr;
     }
-
     PCUIDLIST_RELATIVE item = pidl;
     if (!IsOurPidl(item)) {
         auto last = ILFindLastID(reinterpret_cast<PCIDLIST_ABSOLUTE>(pidl));
         if (last && IsOurPidl(last)) {
             item = last;
         } else {
-            Log::Write(Log::Level::Warn, L"GetPath called with non-module PIDL");
-            return L"";
+             return nullptr;
         }
+    }
+    return item;
+}
+
+std::wstring GetPath(PCUIDLIST_RELATIVE pidl) {
+    auto item = GetOurItem(pidl);
+    if (!item) {
+        Log::Write(Log::Level::Warn, L"GetPath called with non-module PIDL");
+        return L"";
     }
 
     auto bytes = reinterpret_cast<const BYTE*>(item);
-    auto str = reinterpret_cast<const wchar_t*>(bytes + sizeof(USHORT) + sizeof(DWORD));
+    auto str = reinterpret_cast<const wchar_t*>(bytes + sizeof(USHORT) + kOffsetPath);
     return str;
+}
+
+void* GetBaseAddress(PCUIDLIST_RELATIVE pidl) {
+    auto item = GetOurItem(pidl);
+    if (!item) return nullptr;
+
+    auto bytes = reinterpret_cast<const BYTE*>(item);
+    UINT64 addr = 0;
+    memcpy(&addr, bytes + sizeof(USHORT) + kOffsetBaseAddress, sizeof(UINT64));
+    return reinterpret_cast<void*>(addr);
+}
+
+DWORD GetSize(PCUIDLIST_RELATIVE pidl) {
+    auto item = GetOurItem(pidl);
+    if (!item) return 0;
+
+    auto bytes = reinterpret_cast<const BYTE*>(item);
+    DWORD size = 0;
+    memcpy(&size, bytes + sizeof(USHORT) + kOffsetSize, sizeof(DWORD));
+    return size;
 }
 } // namespace Pidl

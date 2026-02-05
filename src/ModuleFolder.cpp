@@ -39,14 +39,20 @@ HRESULT MakeStrRet(const wchar_t* value, STRRET* result) {
     return S_OK;
 }
 
-std::vector<std::wstring> GetModulePaths() {
-    std::vector<std::wstring> paths;
+struct ModuleItem {
+    std::wstring path;
+    void* baseAddress;
+    DWORD size;
+};
+
+std::vector<ModuleItem> GetModuleItems() {
+    std::vector<ModuleItem> items;
 
     HMODULE modules[1024] = {};
     DWORD needed = 0;
     if (!EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed)) {
         Log::Write(Log::Level::Error, L"EnumProcessModules failed: %lu", GetLastError());
-        return paths;
+        return items;
     }
 
     DWORD count = needed / sizeof(HMODULE);
@@ -57,11 +63,18 @@ std::vector<std::wstring> GetModulePaths() {
     for (DWORD i = 0; i < count; ++i) {
         wchar_t path[MAX_PATH] = {};
         if (GetModuleFileNameW(modules[i], path, ARRAYSIZE(path))) {
-            paths.emplace_back(path);
+            MODULEINFO info = {};
+            if (GetModuleInformation(GetCurrentProcess(), modules[i], &info, sizeof(info))) {
+                 items.push_back({path, info.lpBaseOfDll, info.SizeOfImage});
+                 Log::Write(Log::Level::Trace, L"Module: %s Base=%p Size=%u", path, info.lpBaseOfDll, info.SizeOfImage);
+            } else {
+                 items.push_back({path, modules[i], 0});
+                 Log::Write(Log::Level::Warn, L"GetModuleInformation failed for: %s", path);
+            }
         }
     }
 
-    return paths;
+    return items;
 }
 
 std::vector<std::wstring> ExtractDropPaths(IDataObject* dataObject) {
@@ -228,22 +241,6 @@ bool SupportsDropFormat(IDataObject* dataObject) {
     FORMATETC shellFormat = { static_cast<CLIPFORMAT>(CF_SHELLIDLIST()), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     return SUCCEEDED(dataObject->QueryGetData(&shellFormat));
 }
-
-HRESULT GetModuleInfo(const std::wstring& path, MODULEINFO* info) {
-    if (!info) {
-        return E_POINTER;
-    }
-    HMODULE module = GetModuleHandleW(path.c_str());
-    if (!module) {
-        Log::Write(Log::Level::Warn, L"GetModuleHandleW failed: %s (%lu)", path.c_str(), GetLastError());
-        return HRESULT_FROM_WIN32(GetLastError());
-    }
-    if (!GetModuleInformation(GetCurrentProcess(), module, info, sizeof(*info))) {
-        Log::Write(Log::Level::Warn, L"GetModuleInformation failed: %s (%lu)", path.c_str(), GetLastError());
-        return HRESULT_FROM_WIN32(GetLastError());
-    }
-    return S_OK;
-}
 } // namespace
 
 ModuleFolder::ModuleFolder() {
@@ -309,10 +306,10 @@ IFACEMETHODIMP ModuleFolder::EnumObjects(HWND, SHCONTF flags, IEnumIDList** enum
     }
 
     std::vector<PIDLIST_RELATIVE> items;
-    auto paths = GetModulePaths();
-    items.reserve(paths.size());
-    for (const auto& path : paths) {
-        auto pidl = Pidl::CreateFromPath(path);
+    auto moduleItems = GetModuleItems();
+    items.reserve(moduleItems.size());
+    for (const auto& item : moduleItems) {
+        auto pidl = Pidl::CreateFromPath(item.path, item.baseAddress, item.size);
         if (pidl) {
             items.push_back(pidl);
         }
@@ -541,32 +538,31 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
     }
 
     if (!Pidl::IsOurPidl(pidl)) {
+        Log::Write(Log::Level::Warn, L"GetDetailsOf: Invalid PIDL for column %u", column);
         return E_INVALIDARG;
     }
 
     auto path = Pidl::GetPath(pidl);
+    // Log::Write(Log::Level::Trace, L"GetDetailsOf: col=%u path=%s", column, path.c_str());
+
     switch (column) {
     case kColumnName: {
         const wchar_t* base = PathFindFileNameW(path.c_str());
         return MakeStrRet(base, &details->str);
     }
     case kColumnBase: {
-        MODULEINFO info = {};
-        if (SUCCEEDED(GetModuleInfo(path, &info))) {
-            wchar_t text[64] = {};
-            StringCchPrintfW(text, ARRAYSIZE(text), L"0x%p", info.lpBaseOfDll);
-            return MakeStrRet(text, &details->str);
-        }
-        return MakeStrRet(L"", &details->str);
+        void* addr = Pidl::GetBaseAddress(pidl);
+        wchar_t text[64] = {};
+        StringCchPrintfW(text, ARRAYSIZE(text), L"0x%p", addr);
+        Log::Write(Log::Level::Trace, L"GetDetailsOf: BaseAddress=%s for %s", text, path.c_str());
+        return MakeStrRet(text, &details->str);
     }
     case kColumnSize: {
-        MODULEINFO info = {};
-        if (SUCCEEDED(GetModuleInfo(path, &info))) {
-            wchar_t text[64] = {};
-            StringCchPrintfW(text, ARRAYSIZE(text), L"%lu", info.SizeOfImage);
-            return MakeStrRet(text, &details->str);
-        }
-        return MakeStrRet(L"", &details->str);
+        DWORD size = Pidl::GetSize(pidl);
+        wchar_t text[64] = {};
+        StringCchPrintfW(text, ARRAYSIZE(text), L"0x%X (%u)", size, size);
+        Log::Write(Log::Level::Trace, L"GetDetailsOf: Size=%s for %s", text, path.c_str());
+        return MakeStrRet(text, &details->str);
     }
     default:
         return E_INVALIDARG;
@@ -574,6 +570,14 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
 }
 
 IFACEMETHODIMP ModuleFolder::MapColumnToSCID(UINT column, SHCOLUMNID* pscid) {
+    UNREFERENCED_PARAMETER(column);
+    UNREFERENCED_PARAMETER(pscid);
+    // If we return E_NOTIMPL, Explorer falls back to GetDetailsOf, which is exactly what we want
+    // unless we implement GetDetailsEx generally.
+    // For now, disabling this mapping fixes the "empty columns" issue because GetDetailsEx is E_NOTIMPL.
+    return E_NOTIMPL; 
+    
+    /* 
     if (!pscid) {
         return E_POINTER;
     }
@@ -582,7 +586,7 @@ IFACEMETHODIMP ModuleFolder::MapColumnToSCID(UINT column, SHCOLUMNID* pscid) {
         *pscid = PKEY_ItemNameDisplay;
         return S_OK;
     case kColumnBase:
-        *pscid = PKEY_ItemTypeText;
+        *pscid = PKEY_ItemTypeText; // This was probably wrong anyway
         return S_OK;
     case kColumnSize:
         *pscid = PKEY_Size;
@@ -590,6 +594,7 @@ IFACEMETHODIMP ModuleFolder::MapColumnToSCID(UINT column, SHCOLUMNID* pscid) {
     default:
         return E_INVALIDARG;
     }
+    */
 }
 
 IFACEMETHODIMP ModuleFolder::DragEnter(IDataObject* dataObject, DWORD, POINTL, DWORD* effect) {
