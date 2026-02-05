@@ -346,7 +346,7 @@ IFACEMETHODIMP ModuleFolder::BindToStorage(PCUIDLIST_RELATIVE, IBindCtx*, REFIID
     return E_NOTIMPL;
 }
 
-IFACEMETHODIMP ModuleFolder::CompareIDs(LPARAM, PCUIDLIST_RELATIVE pidl1, PCUIDLIST_RELATIVE pidl2) {
+IFACEMETHODIMP ModuleFolder::CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PCUIDLIST_RELATIVE pidl2) {
     if (!pidl1 || !pidl2) {
         return E_INVALIDARG;
     }
@@ -355,11 +355,50 @@ IFACEMETHODIMP ModuleFolder::CompareIDs(LPARAM, PCUIDLIST_RELATIVE pidl1, PCUIDL
     bool ours1 = Pidl::IsOurPidl(pidl1);
     bool ours2 = Pidl::IsOurPidl(pidl2);
 
-    // If both are ours, compare paths
+    // If both are ours, compare based on column
     if (ours1 && ours2) {
-        auto path1 = Pidl::GetPath(pidl1);
-        auto path2 = Pidl::GetPath(pidl2);
-        int result = lstrcmpiW(path1.c_str(), path2.c_str());
+        int column = static_cast<int>(lParam & 0xFFFF);
+        int result = 0;
+
+        switch (column) {
+        case kColumnName:
+             {
+                 auto path1 = Pidl::GetPath(pidl1);
+                 auto path2 = Pidl::GetPath(pidl2);
+                 const wchar_t* name1 = PathFindFileNameW(path1.c_str());
+                 const wchar_t* name2 = PathFindFileNameW(path2.c_str());
+                 result = lstrcmpiW(name1, name2);
+                 if (result == 0) {
+                     // Fallback to full path to be deterministic
+                     result = lstrcmpiW(path1.c_str(), path2.c_str());
+                 }
+             }
+             break;
+        case kColumnBase:
+             {
+                 uintptr_t base1 = reinterpret_cast<uintptr_t>(Pidl::GetBaseAddress(pidl1));
+                 uintptr_t base2 = reinterpret_cast<uintptr_t>(Pidl::GetBaseAddress(pidl2));
+                 if (base1 < base2) result = -1;
+                 else if (base1 > base2) result = 1;
+             }
+             break;
+        case kColumnSize:
+            {
+                 DWORD size1 = Pidl::GetSize(pidl1);
+                 DWORD size2 = Pidl::GetSize(pidl2);
+                 if (size1 < size2) result = -1;
+                 else if (size1 > size2) result = 1;
+            }
+            break;
+        default:
+             {
+                 auto path1 = Pidl::GetPath(pidl1);
+                 auto path2 = Pidl::GetPath(pidl2);
+                 result = lstrcmpiW(path1.c_str(), path2.c_str());
+             }
+             break;
+        }
+
         short compare = static_cast<short>(result);
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, static_cast<USHORT>(compare));
     }
