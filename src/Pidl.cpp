@@ -26,14 +26,6 @@ PIDLIST_RELATIVE AllocatePidl(size_t dataSize) {
     memset(bytes + sizeof(USHORT), 0, dataSize + sizeof(USHORT));
     return pidl;
 }
-
-DWORD* SignaturePtr(PCUIDLIST_RELATIVE pidl) {
-    if (!pidl) {
-        return nullptr;
-    }
-    auto bytes = reinterpret_cast<const BYTE*>(pidl);
-    return reinterpret_cast<DWORD*>(const_cast<BYTE*>(bytes + sizeof(USHORT) + kOffsetSignature));
-}
 } // namespace
 
 PIDLIST_ABSOLUTE CreateRoot() {
@@ -97,8 +89,11 @@ bool IsOurPidl(PCUIDLIST_RELATIVE pidl) {
     if (cb < sizeof(USHORT) + kFixedDataSize) {
         return false;
     }
-    auto signature = SignaturePtr(pidl);
-    return signature && *signature == kSignature;
+    
+    auto bytes = reinterpret_cast<const BYTE*>(pidl);
+    DWORD sig = 0;
+    memcpy(&sig, bytes + sizeof(USHORT) + kOffsetSignature, sizeof(DWORD));
+    return sig == kSignature;
 }
 
 PCUIDLIST_RELATIVE GetOurItem(PCUIDLIST_RELATIVE pidl) {

@@ -129,7 +129,7 @@ std::vector<std::wstring> ExtractDropPaths(IDataObject* dataObject) {
 void LoadLibraryPaths(const std::vector<std::wstring>& paths);
 
 class ItemContextMenu final
-    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IContextMenu3> {
+    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IContextMenu3, IContextMenu2, IContextMenu> {
 public:
     explicit ItemContextMenu(std::vector<std::wstring> paths)
         : paths_(std::move(paths)) {}
@@ -141,11 +141,15 @@ public:
         if (flags & CMF_DEFAULTONLY) {
             return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
         }
-        if (idCmdFirst > idCmdLast) {
-            return E_INVALIDARG;
+        
+        UINT id = idCmdFirst;
+        if (id + kCmdCount - 1 > idCmdLast) {
+            return E_FAIL; // Not enough IDs
         }
-        InsertMenuW(menu, index, MF_BYPOSITION | MF_STRING, idCmdFirst + kCmdLoad, L"Load Module");
-        SetMenuDefaultItem(menu, index, TRUE);
+
+        InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdExplore, L"Explore to parent folder");
+        InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdProperties, L"Properties");
+        
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, kCmdCount);
     }
 
@@ -153,45 +157,56 @@ public:
         if (!info) {
             return E_POINTER;
         }
+        
+        UINT cmd = kCmdCount;
+
         if (HIWORD(info->lpVerb) != 0) {
             const char* verb = reinterpret_cast<const char*>(info->lpVerb);
-            if (lstrcmpiA(verb, "open") != 0 && lstrcmpiA(verb, "load") != 0) {
+            if (lstrcmpiA(verb, "explore") == 0) {
+                cmd = kCmdExplore;
+            } else if (lstrcmpiA(verb, "properties") == 0) {
+                cmd = kCmdProperties;
+            } else {
                 return E_FAIL;
             }
-        } else if (LOWORD(info->lpVerb) != kCmdLoad) {
-            return E_FAIL;
+        } else {
+            cmd = LOWORD(info->lpVerb);
         }
 
-        Log::Write(Log::Level::Info, L"ItemContextMenu::InvokeCommand loading %zu module(s)", paths_.size());
-        LoadLibraryPaths(paths_);
+        switch (cmd) {
+        case kCmdExplore:
+            for (const auto& path : paths_) {
+                PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(path.c_str());
+                if (pidl) {
+                    SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
+                    ILFree(pidl);
+                }
+            }
+            break;
+        case kCmdProperties:
+            for (const auto& path : paths_) {
+                SHObjectProperties(nullptr, SHOP_FILEPATH, path.c_str(), nullptr);
+            }
+            break;
+        default:
+            return E_FAIL;
+        }
         return S_OK;
     }
 
     IFACEMETHODIMP GetCommandString(UINT_PTR idCmd, UINT type, UINT*, LPSTR name, UINT cchMax) override {
-        if (idCmd != kCmdLoad) {
-            return E_INVALIDARG;
-        }
         if (!name || cchMax == 0) {
             return E_POINTER;
         }
 
-        switch (type) {
-        case GCS_HELPTEXTA:
-            StringCchCopyA(name, cchMax, "Load the selected module(s).");
-            break;
-        case GCS_HELPTEXTW:
-            StringCchCopyW(reinterpret_cast<LPWSTR>(name), cchMax, L"Load the selected module(s).");
-            break;
-        case GCS_VERBA:
-            StringCchCopyA(name, cchMax, "open");
-            break;
-        case GCS_VERBW:
-            StringCchCopyW(reinterpret_cast<LPWSTR>(name), cchMax, L"open");
-            break;
+        switch (idCmd) {
+        case kCmdExplore:
+            return HandleString(type, name, cchMax, "explore", L"explore", "Open parent folder.", L"Open parent folder.");
+        case kCmdProperties:
+            return HandleString(type, name, cchMax, "properties", L"properties", "Show properties.", L"Show properties.");
         default:
-            break;
+            return E_INVALIDARG;
         }
-        return S_OK;
     }
 
     IFACEMETHODIMP HandleMenuMsg(UINT, WPARAM, LPARAM) override {
@@ -206,9 +221,24 @@ public:
     }
 
 private:
+    HRESULT HandleString(UINT type, LPSTR name, UINT cchMax, const char* verbA, const wchar_t* verbW, const char* helpA, const wchar_t* helpW) {
+        switch (type) {
+        case GCS_HELPTEXTA:
+            return StringCchCopyA(name, cchMax, helpA);
+        case GCS_HELPTEXTW:
+            return StringCchCopyW(reinterpret_cast<LPWSTR>(name), cchMax, helpW);
+        case GCS_VERBA:
+            return StringCchCopyA(name, cchMax, verbA);
+        case GCS_VERBW:
+            return StringCchCopyW(reinterpret_cast<LPWSTR>(name), cchMax, verbW);
+        }
+        return E_NOTIMPL;
+    }
+
     enum : UINT {
-        kCmdLoad = 0,
-        kCmdCount = 1
+        kCmdExplore = 0,
+        kCmdProperties = 1,
+        kCmdCount = 2
     };
 
     std::vector<std::wstring> paths_;
@@ -496,21 +526,27 @@ IFACEMETHODIMP ModuleFolder::GetUIObjectOf(HWND, UINT cidl, PCUITEMID_CHILD_ARRA
         paths.reserve(cidl);
         for (UINT i = 0; i < cidl; ++i) {
             if (!Pidl::IsOurPidl(apidl[i])) {
+                Log::Write(Log::Level::Warn, L"GetUIObjectOf: PIDL %u is not ours", i);
                 continue;
             }
             auto path = Pidl::GetPath(apidl[i]);
             if (!path.empty()) {
                 paths.push_back(std::move(path));
+            } else {
+                Log::Write(Log::Level::Warn, L"GetUIObjectOf: PIDL %u has empty path", i);
             }
         }
         if (paths.empty()) {
+            Log::Write(Log::Level::Error, L"GetUIObjectOf: No valid paths found");
             return E_FAIL;
         }
         auto menu = Microsoft::WRL::Make<ItemContextMenu>(std::move(paths));
         if (!menu) {
             return E_OUTOFMEMORY;
         }
-        return menu.CopyTo(reinterpret_cast<IContextMenu3**>(ppv));
+        HRESULT hr = menu.CopyTo(riid, ppv);
+        Log::Write(Log::Level::Info, L"GetUIObjectOf: Context menu created, hr=0x%08X", hr);
+        return hr;
     }
     return E_NOINTERFACE;
 }
