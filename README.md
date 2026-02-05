@@ -1,6 +1,7 @@
 # Explorer Modules Namespace Extension
 
 A Windows Explorer Namespace Extension that allows you to inspect and interact with the modules (DLLs) currently loaded within the Explorer process.
+Written almost excluslively by Github Co-pilot using a mix of Codex 5.2 and Gemini 3.
 
 ![Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Language](https://img.shields.io/badge/Language-C++20-00599C?logo=c%2B%2B&logoColor=white)
