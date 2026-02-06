@@ -11,7 +11,7 @@ struct ModuleInfo {
     DWORD size;
 };
 
-void LoadModulesIf(const std::vector<std::wstring>& paths);
+int LoadModulesIf(const std::vector<std::wstring>& paths);
 
 bool UnloadLibrary(void* baseAddress);
 

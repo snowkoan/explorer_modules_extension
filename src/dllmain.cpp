@@ -10,23 +10,60 @@ extern HRESULT CreateModuleFolderClassFactory(REFIID riid, void** ppv);
 HMODULE g_module = nullptr;
 
 namespace {
+
+// Registry path constants
+constexpr wchar_t kKeyClsidRoot[] = L"Software\\Classes\\CLSID";
+constexpr wchar_t kKeyNamespaceRoot[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace";
+
+// RAII wrapper for HKEY handles to ensure resources are properly released.
+class ScopedKey {
+public:
+    ScopedKey() : m_key(nullptr) {}
+    ~ScopedKey() { Close(); }
+
+    // Non-copyable to prevent double-free
+    ScopedKey(const ScopedKey&) = delete;
+    ScopedKey& operator=(const ScopedKey&) = delete;
+
+    // Allow taking address for API calls that output an HKEY (e.g., RegCreateKeyEx)
+    HKEY* operator&() {
+        Close();
+        return &m_key;
+    }
+
+    // Implicit conversion to HKEY for API calls that take an input HKEY
+    operator HKEY() const {
+        return m_key;
+    }
+
+    void Close() {
+        if (m_key) {
+            RegCloseKey(m_key);
+            m_key = nullptr;
+        }
+    }
+
+private:
+    HKEY m_key;
+};
+
 HRESULT SetStringValue(HKEY key, const wchar_t* name, const wchar_t* value) {
-    return RegSetValueExW(key, name, 0, REG_SZ,
+    return HRESULT_FROM_WIN32(RegSetValueExW(key, name, 0, REG_SZ,
         reinterpret_cast<const BYTE*>(value),
-        static_cast<DWORD>((wcslen(value) + 1) * sizeof(wchar_t)));
+        static_cast<DWORD>((wcslen(value) + 1) * sizeof(wchar_t))));
 }
 
 HRESULT SetDwordValue(HKEY key, const wchar_t* name, DWORD value) {
-    return RegSetValueExW(key, name, 0, REG_DWORD,
+    return HRESULT_FROM_WIN32(RegSetValueExW(key, name, 0, REG_DWORD,
         reinterpret_cast<const BYTE*>(&value),
-        static_cast<DWORD>(sizeof(value)));
+        static_cast<DWORD>(sizeof(value))));
 }
 
 HRESULT RegisterClsid(const wchar_t* modulePath) {
-    HKEY clsidKey = nullptr;
+    ScopedKey clsidKey;
     HRESULT hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
         HKEY_CURRENT_USER,
-        L"Software\\Classes\\CLSID",
+        kKeyClsidRoot,
         0,
         nullptr,
         REG_OPTION_NON_VOLATILE,
@@ -39,7 +76,7 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
         return hr;
     }
 
-    HKEY classKey = nullptr;
+    ScopedKey classKey;
     hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
         clsidKey,
         kModuleFolderClsidString,
@@ -50,7 +87,6 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
         nullptr,
         &classKey,
         nullptr));
-    RegCloseKey(clsidKey);
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"RegCreateKeyExW CLSID subkey failed: 0x%08X", hr);
         return hr;
@@ -59,28 +95,27 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
     hr = SetStringValue(classKey, nullptr, kModuleFolderDisplayName);
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"Set CLSID display name failed: 0x%08X", hr);
-        RegCloseKey(classKey);
         return hr;
     }
 
     SetDwordValue(classKey, L"System.IsPinnedToNameSpaceTree", 1);
 
-    HKEY categoryKey = nullptr;
-    HRESULT catHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
-        classKey,
-        L"Implemented Categories\\{00021490-0000-0000-C000-000000000046}",
-        0,
-        nullptr,
-        REG_OPTION_NON_VOLATILE,
-        KEY_WRITE,
-        nullptr,
-        &categoryKey,
-        nullptr));
-    if (SUCCEEDED(catHr)) {
-        RegCloseKey(categoryKey);
+    {
+        // "Implemented Categories" is just a marker key, no values needed.
+        ScopedKey categoryKey;
+        RegCreateKeyExW(
+            classKey,
+            L"Implemented Categories\\{00021490-0000-0000-C000-000000000046}",
+            0,
+            nullptr,
+            REG_OPTION_NON_VOLATILE,
+            KEY_WRITE,
+            nullptr,
+            &categoryKey,
+            nullptr);
     }
 
-    HKEY inprocKey = nullptr;
+    ScopedKey inprocKey;
     hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
         classKey,
         L"InProcServer32",
@@ -93,7 +128,6 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
         nullptr));
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"RegCreateKeyExW InProcServer32 failed: 0x%08X", hr);
-        RegCloseKey(classKey);
         return hr;
     }
 
@@ -103,55 +137,32 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
     }
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"Set InProcServer32 values failed: 0x%08X", hr);
+        return hr;
     }
-    RegCloseKey(inprocKey);
 
-    HKEY shellFolderKey = nullptr;
-    HRESULT shellHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
-        classKey,
-        L"ShellFolder",
-        0,
-        nullptr,
-        REG_OPTION_NON_VOLATILE,
-        KEY_WRITE,
-        nullptr,
-        &shellFolderKey,
-        nullptr));
-    if (SUCCEEDED(shellHr)) {
+    ScopedKey shellFolderKey;
+    if (RegCreateKeyExW(classKey, L"ShellFolder", 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &shellFolderKey, nullptr) == ERROR_SUCCESS) {
         SetDwordValue(shellFolderKey, L"Attributes",
             SFGAO_FOLDER | SFGAO_FILESYSANCESTOR | SFGAO_DROPTARGET | SFGAO_CANLINK | SFGAO_CANCOPY);
         SetDwordValue(shellFolderKey, L"FolderValueFlags", FWF_DESKTOP);
-        RegCloseKey(shellFolderKey);
     }
 
-    HKEY iconKey = nullptr;
-    HRESULT iconHr = HRESULT_FROM_WIN32(RegCreateKeyExW(
-        classKey,
-        L"DefaultIcon",
-        0,
-        nullptr,
-        REG_OPTION_NON_VOLATILE,
-        KEY_WRITE,
-        nullptr,
-        &iconKey,
-        nullptr));
-    if (SUCCEEDED(iconHr)) {
+    ScopedKey iconKey;
+    if (RegCreateKeyExW(classKey, L"DefaultIcon", 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &iconKey, nullptr) == ERROR_SUCCESS) {
         wchar_t iconValue[MAX_PATH * 2] = {};
         StringCchPrintfW(iconValue, ARRAYSIZE(iconValue), L"%s,-1", modulePath);
         SetStringValue(iconKey, nullptr, iconValue);
-        RegCloseKey(iconKey);
     }
 
-    RegCloseKey(classKey);
     Log::Write(Log::Level::Info, L"Registered CLSID %s", kModuleFolderClsidString);
-    return hr;
+    return S_OK;
 }
 
 HRESULT RegisterNamespace() {
-    HKEY nsKey = nullptr;
+    ScopedKey nsKey;
     HRESULT hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
         HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace",
+        kKeyNamespaceRoot,
         0,
         nullptr,
         REG_OPTION_NON_VOLATILE,
@@ -164,7 +175,7 @@ HRESULT RegisterNamespace() {
         return hr;
     }
 
-    HKEY clsidKey = nullptr;
+    ScopedKey clsidKey;
     hr = HRESULT_FROM_WIN32(RegCreateKeyExW(
         nsKey,
         kModuleFolderClsidString,
@@ -175,14 +186,12 @@ HRESULT RegisterNamespace() {
         nullptr,
         &clsidKey,
         nullptr));
-    RegCloseKey(nsKey);
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"RegCreateKeyExW NameSpace CLSID failed: 0x%08X", hr);
         return hr;
     }
 
     hr = SetStringValue(clsidKey, nullptr, kModuleFolderDisplayName);
-    RegCloseKey(clsidKey);
     if (FAILED(hr)) {
         Log::Write(Log::Level::Error, L"Set NameSpace display name failed: 0x%08X", hr);
     } else {
@@ -241,13 +250,12 @@ extern "C" STDAPI DllRegisterServer() {
 extern "C" STDAPI DllUnregisterServer() {
     wchar_t clsidPath[MAX_PATH] = {};
     StringCchPrintfW(clsidPath, ARRAYSIZE(clsidPath),
-        L"Software\\Classes\\CLSID\\%s", kModuleFolderClsidString);
+        L"%s\\%s", kKeyClsidRoot, kModuleFolderClsidString);
     UnregisterTree(HKEY_CURRENT_USER, clsidPath);
 
     wchar_t nsPath[MAX_PATH] = {};
     StringCchPrintfW(nsPath, ARRAYSIZE(nsPath),
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MyComputer\\NameSpace\\%s",
-        kModuleFolderClsidString);
+        L"%s\\%s", kKeyNamespaceRoot, kModuleFolderClsidString);
     UnregisterTree(HKEY_CURRENT_USER, nsPath);
 
     Log::Write(Log::Level::Info, L"DllUnregisterServer completed");

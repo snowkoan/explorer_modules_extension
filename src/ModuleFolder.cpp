@@ -758,7 +758,10 @@ IFACEMETHODIMP ModuleFolder::Drop(IDataObject* dataObject, DWORD, POINTL, DWORD*
     auto paths = ExtractDropPaths(dataObject);
     Log::Write(Log::Level::Info, L"Drop received %zu paths", paths.size());
     if (!paths.empty()) {
-        ModuleHelpers::LoadModulesIf(paths);
+        int loaded = ModuleHelpers::LoadModulesIf(paths);
+        if (loaded > 0 && rootPidl_) {
+            SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_IDLIST, rootPidl_, nullptr);
+        }
     }
     return S_OK;
 }

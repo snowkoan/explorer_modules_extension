@@ -6,7 +6,8 @@
 
 namespace ModuleHelpers {
 
-void LoadModulesIf(const std::vector<std::wstring>& paths) {
+int LoadModulesIf(const std::vector<std::wstring>& paths) {
+    int loadedCount = 0;
     for (const auto& path : paths) {
         if (GetModuleHandleW(path.c_str())) {
             Log::Write(Log::Level::Info, L"Module already loaded: %s", path.c_str());
@@ -25,7 +26,9 @@ void LoadModulesIf(const std::vector<std::wstring>& paths) {
             continue;
         }
         Log::Write(Log::Level::Info, L"LoadLibrary succeeded: %s", path.c_str());
+        loadedCount++;
     }
+    return loadedCount;
 }
 
 bool UnloadLibrary(void* baseAddress) {
