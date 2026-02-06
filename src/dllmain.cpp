@@ -4,6 +4,7 @@
 #include <shlobj.h>
 #include <strsafe.h>
 #include <wrl/module.h>
+#include "IidNames.h"
 
 extern HRESULT CreateModuleFolderClassFactory(REFIID riid, void** ppv);
 
@@ -215,7 +216,10 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
 }
 
 extern "C" STDAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void** ppv) {
-    // Log::Write(Log::Level::Info, L"DllGetClassObject called: clsid=%s", kModuleFolderClsidString);
+
+    Log::Write(Log::Level::Trace, L"DllGetClassObject called: clsid=%s, riid=%s", 
+        IidNames::ToString(clsid).c_str(), IidNames::ToString(riid).c_str());
+    
     if (!IsEqualCLSID(clsid, CLSID_ModuleFolder)) {
         return CLASS_E_CLASSNOTAVAILABLE;
     }

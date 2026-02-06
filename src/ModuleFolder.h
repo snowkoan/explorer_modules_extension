@@ -27,9 +27,11 @@ public:
     IFACEMETHODIMP GetClassID(CLSID* classId) override;
 
     // IPersistFolder
+    /// @brief Initializes the folder with the given PIDL. This is called by Explorer when the namespace extension is created.    
     IFACEMETHODIMP Initialize(PCIDLIST_ABSOLUTE pidl) override;
 
     // IPersistFolder2
+    /// @brief Gets the current folder's PIDL.
     IFACEMETHODIMP GetCurFolder(PIDLIST_ABSOLUTE* pidl) override;
 
     // IShellFolder

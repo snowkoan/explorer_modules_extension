@@ -3,10 +3,15 @@
 #include <objbase.h>
 #include <shlobj.h>
 #include <strsafe.h>
+#include <ModuleFolder.h>
 
 namespace IidNames {
 namespace {
 const wchar_t* LookupName(REFIID iid) {
+    // Custom
+    if (IsEqualIID(iid, CLSID_ModuleFolder)) return L"CLSID_ModuleFolder";
+
+    // Windows
     if (IsEqualIID(iid, IID_IUnknown)) return L"IUnknown";
     if (IsEqualIID(iid, IID_IClassFactory)) return L"IClassFactory";
     if (IsEqualIID(iid, IID_IShellFolder)) return L"IShellFolder";
