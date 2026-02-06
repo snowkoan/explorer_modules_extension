@@ -20,7 +20,10 @@ constexpr UINT kColumnName = 0;
 constexpr UINT kColumnBase = 1;
 constexpr UINT kColumnSize = 2;
 constexpr UINT kColumnPath = 3;
-constexpr UINT kColumnCount = 4;
+constexpr UINT kColumnCompany = 4;
+constexpr UINT kColumnVersion = 5;
+constexpr UINT kColumnMachine = 6;
+constexpr UINT kColumnCount = 7;
 
 UINT CF_SHELLIDLIST() {
     static UINT format = RegisterClipboardFormatW(CFSTR_SHELLIDLIST);
@@ -125,6 +128,7 @@ public:
         InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdExplore, L"Explore to parent folder");
         InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdProperties, L"Properties");
         InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdUnload, L"Unload");
+        InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdCopyPath, L"Copy path");
         
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, kCmdCount);
     }
@@ -144,6 +148,8 @@ public:
                 cmd = kCmdProperties;
             } else if (lstrcmpiA(verb, "unload") == 0) {
                 cmd = kCmdUnload;
+            } else if (lstrcmpiA(verb, "copypath") == 0) {
+                cmd = kCmdCopyPath;
             } else {
                 return E_FAIL;
             }
@@ -181,6 +187,30 @@ public:
             }
             break;
         }
+        case kCmdCopyPath: {
+            if (OpenClipboard(info->hwnd)) {
+                EmptyClipboard();
+                std::wstring allPaths;
+                for (const auto& item : items_) {
+                    if (!allPaths.empty()) allPaths += L"\r\n";
+                    allPaths += item.path;
+                }
+                size_t size = (allPaths.size() + 1) * sizeof(wchar_t);
+                HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
+                if (hMem) {
+                    void* pMem = GlobalLock(hMem);
+                    if (pMem) {
+                        memcpy(pMem, allPaths.c_str(), size);
+                        GlobalUnlock(hMem);
+                        SetClipboardData(CF_UNICODETEXT, hMem);
+                    } else {
+                        GlobalFree(hMem);
+                    }
+                }
+                CloseClipboard();
+            }
+            break;
+        }
         default:
             return E_FAIL;
         }
@@ -199,6 +229,8 @@ public:
             return HandleString(type, name, cchMax, "properties", L"properties", "Show properties.", L"Show properties.");
         case kCmdUnload:
             return HandleString(type, name, cchMax, "unload", L"unload", "Unload the module.", L"Unload the module.");
+        case kCmdCopyPath:
+            return HandleString(type, name, cchMax, "copypath", L"copypath", "Copy module path.", L"Copy module path.");
         default:
             return E_INVALIDARG;
         }
@@ -234,7 +266,8 @@ private:
         kCmdExplore = 0,
         kCmdProperties = 1,
         kCmdUnload = 2,
-        kCmdCount = 3
+        kCmdCopyPath = 3,
+        kCmdCount = 4
     };
 
     std::vector<ContextMenuItemData> items_;
@@ -603,6 +636,12 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
             return MakeStrRet(L"Size", &details->str);
         case kColumnPath:
             return MakeStrRet(L"Path", &details->str);
+        case kColumnCompany:
+            return MakeStrRet(L"Company", &details->str);
+        case kColumnVersion:
+            return MakeStrRet(L"Version", &details->str);
+        case kColumnMachine:
+            return MakeStrRet(L"Architecture", &details->str);
         default:
             return E_INVALIDARG;
         }
@@ -637,6 +676,18 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
     }
     case kColumnPath: {
         return MakeStrRet(path.c_str(), &details->str);
+    }
+    case kColumnCompany: {
+        auto info = ModuleHelpers::GetImageInfo(path);
+        return MakeStrRet(info.companyName.c_str(), &details->str);
+    }
+    case kColumnVersion: {
+        auto info = ModuleHelpers::GetImageInfo(path);
+        return MakeStrRet(info.fileVersion.c_str(), &details->str);
+    }
+    case kColumnMachine: {
+        auto info = ModuleHelpers::GetImageInfo(path);
+        return MakeStrRet(info.machineType.c_str(), &details->str);
     }
     default:
         return E_INVALIDARG;

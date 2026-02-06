@@ -38,4 +38,5 @@ target_link_libraries(ExplorerModulesNamespace PRIVATE
     Ole32
     Shell32
     RuntimeObject
+    Version
 )
