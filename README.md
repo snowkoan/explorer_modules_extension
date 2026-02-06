@@ -1,5 +1,7 @@
 # Explorer Modules Namespace Extension
 
+I wanted to better understand how Explorer namespace extensions work so I came up with this project.
+
 A Windows Explorer Namespace Extension that allows you to inspect and interact with the modules (DLLs) currently loaded within the Explorer process.
 Written almost excluslively by Github Co-pilot using a mix of Codex 5.2 and Gemini 3.
 
@@ -13,7 +15,10 @@ Written almost excluslively by Github Co-pilot using a mix of Codex 5.2 and Gemi
 This project implements a virtual folder that integrates directly into Windows Explorer under "This PC". It serves two primary purposes:
 
 1.  **Visualization**: Lists all modules (EXEs and DLLs) loaded in the current `explorer.exe` process, showing details like base address and memory size.
-2.  **Interaction**: Allows you to dynamically load new modules into the Explorer process simply by dragging and dropping them into the folder.
+2.  **Interaction**: Allows you to dynamically load new modules into the Explorer process simply by dragging and dropping them into the folder. You can also unload modules via the right-click menu, though there is a reasonable chance that you will crash or hang Explorer by doing this.
+
+<img width="2779" height="1079" alt="image" src="https://github.com/user-attachments/assets/f4bb920e-d5b4-428d-a754-ee27ef61a9ff" />
+<img width="1525" height="332" alt="image" src="https://github.com/user-attachments/assets/85085d39-5931-402e-bb76-58c05a18ae4c" />
 
 ## ✨ Features
 
