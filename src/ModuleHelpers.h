@@ -13,6 +13,8 @@ struct ModuleInfo {
 
 void LoadModulesIf(const std::vector<std::wstring>& paths);
 
+bool UnloadLibrary(void* baseAddress);
+
 std::vector<ModuleInfo> GetLoadedModules();
 
 }

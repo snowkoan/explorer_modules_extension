@@ -170,12 +170,9 @@ public:
             bool refresh = false;
             for (const auto& item : items_) {
                 if (item.baseAddress) {
-                    // HMODULE is a handle to the module. This is the base address of the module in memory.
                     Log::Write(Log::Level::Info, L"Unloading module at %p: %s", item.baseAddress, item.path.c_str());
-                    if (FreeLibrary(static_cast<HMODULE>(item.baseAddress))) {
+                    if (ModuleHelpers::UnloadLibrary(item.baseAddress)) {
                          refresh = true;
-                    } else {
-                         Log::Write(Log::Level::Error, L"FreeLibrary failed: %lu", GetLastError());
                     }
                 }
             }
@@ -271,7 +268,9 @@ IFACEMETHODIMP ModuleFolder::GetClassID(CLSID* classId) {
 }
 
 IFACEMETHODIMP ModuleFolder::Initialize(PCIDLIST_ABSOLUTE pidl) {
-    Log::Write(Log::Level::Info, L"ModuleFolder::Initialize called (pidl=%p)", pidl);
+
+    Log::Write(Log::Level::Trace, L"ModuleFolder::Initialize called (pidl=%p)", pidl);
+
     if (rootPidl_) {
         ILFree(rootPidl_);
     }
@@ -468,7 +467,7 @@ IFACEMETHODIMP ModuleFolder::CreateViewObject(HWND, REFIID riid, void** ppv) {
         return hr;
     }
     if (IsEqualIID(riid, IID_IDropTarget)) {
-        Log::Write(Log::Level::Info, L"CreateViewObject returning IDropTarget");
+        Log::Write(Log::Level::Trace, L"CreateViewObject returning IDropTarget");
         *ppv = static_cast<IDropTarget*>(this);
         AddRef();
         return S_OK;
@@ -480,7 +479,7 @@ IFACEMETHODIMP ModuleFolder::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY ap
     if (!rgfInOut) {
         return E_POINTER;
     }
-    SFGAOF folderAttrs = SFGAO_FOLDER | SFGAO_HASSUBFOLDER | SFGAO_BROWSABLE | SFGAO_DROPTARGET;
+    SFGAOF folderAttrs = SFGAO_FOLDER | SFGAO_BROWSABLE | SFGAO_DROPTARGET;
     SFGAOF itemAttrs = SFGAO_STREAM | SFGAO_READONLY | SFGAO_DROPTARGET;
     SFGAOF attrs = (cidl == 0 || !apidl) ? folderAttrs : itemAttrs;
     if (*rgfInOut) {
@@ -488,8 +487,7 @@ IFACEMETHODIMP ModuleFolder::GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY ap
     } else {
         *rgfInOut = attrs;
     }
-    Log::Write(Log::Level::Trace, L"GetAttributesOf %s attrs=0x%08X",
-        (cidl == 0 || !apidl) ? L"folder" : L"item", *rgfInOut);
+    Log::Write(Log::Level::Trace, L"GetAttributesOf %s attrs=0x%08X", (cidl == 0 || !apidl) ? L"folder" : L"item", *rgfInOut);
     return S_OK;
 }
 
@@ -499,7 +497,7 @@ IFACEMETHODIMP ModuleFolder::GetUIObjectOf(HWND, UINT cidl, PCUITEMID_CHILD_ARRA
         return E_POINTER;
     }
     *ppv = nullptr;
-    Log::Write(Log::Level::Info, L"GetUIObjectOf cidl=%u riid=%s", cidl, IidNames::ToString(riid).c_str());
+    Log::Write(Log::Level::Trace, L"GetUIObjectOf cidl=%u riid=%s", cidl, IidNames::ToString(riid).c_str());
     if (cidl == 0 && IsEqualIID(riid, IID_IDropTarget)) {
         *ppv = static_cast<IDropTarget*>(this);
         AddRef();
@@ -704,7 +702,7 @@ IFACEMETHODIMP ModuleFolder::DragEnter(IDataObject* dataObject, DWORD keyState, 
     } else {
         *effect = DROPEFFECT_NONE;
     }
-    Log::Write(Log::Level::Info, L"DragEnter: %s (In: 0x%X, Out: 0x%X, Key: 0x%X)", canDrop_ ? L"accepted" : L"rejected", inputEffect, *effect, keyState);
+    Log::Write(Log::Level::Trace, L"DragEnter: %s (In: 0x%X, Out: 0x%X, Key: 0x%X)", canDrop_ ? L"accepted" : L"rejected", inputEffect, *effect, keyState);    
     return S_OK;
 }
 
@@ -741,7 +739,7 @@ IFACEMETHODIMP ModuleFolder::DragOver(DWORD keyState, POINTL, DWORD* effect) {
 
 IFACEMETHODIMP ModuleFolder::DragLeave() {
     canDrop_ = false;
-    Log::Write(Log::Level::Info, L"DragLeave");
+    Log::Write(Log::Level::Trace, L"DragLeave");
     return S_OK;
 }
 

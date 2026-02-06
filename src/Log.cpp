@@ -22,6 +22,11 @@ const wchar_t* LevelToString(Level level) {
 } // namespace
 
 void Write(Level level, const wchar_t* format, ...) {
+    // Compile-time log level check
+    if (level > kMaxLogLevel) {
+        return;
+    }
+
     if (!format) {
         return;
     }

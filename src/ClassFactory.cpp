@@ -14,7 +14,9 @@ class ModuleFolderClassFactory final
 public:
     IFACEMETHODIMP CreateInstance(IUnknown* outer, REFIID riid, void** ppv) override {
         auto iidText = IidNames::ToString(riid);
-        Log::Write(Log::Level::Info, L"ClassFactory::CreateInstance called (riid=%s)", iidText.c_str());
+
+        Log::Write(Log::Level::Trace, L"ClassFactory::CreateInstance called (riid=%s)", iidText.c_str());
+
         if (outer != nullptr) {
             Log::Write(Log::Level::Warn, L"ClassFactory::CreateInstance aggregation not supported");
             return CLASS_E_NOAGGREGATION;

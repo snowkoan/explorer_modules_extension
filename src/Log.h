@@ -4,11 +4,15 @@
 
 namespace Log {
 enum class Level {
-    Trace,
-    Info,
+    Critical,
+    Error,
     Warn,
-    Error
+    Info,
+    Trace    
 };
+
+// Compile-time configuration for log level
+constexpr Level kMaxLogLevel = Level::Info;
 
 void Write(Level level, const wchar_t* format, ...);
 } // namespace Log

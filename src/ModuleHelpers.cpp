@@ -28,6 +28,39 @@ void LoadModulesIf(const std::vector<std::wstring>& paths) {
     }
 }
 
+bool UnloadLibrary(void* baseAddress) {
+    if (!baseAddress) return false;
+    
+    bool success = false;
+    bool unloaded = false;
+    HMODULE hModule = static_cast<HMODULE>(baseAddress);
+
+    // Call FreeLibrary repeatedly to decrement reference count until it hits zero,
+    // or until we hit a safety limit.
+    int i = 0;
+    for (i = 0; i < 100; ++i) {
+        if (FreeLibrary(hModule)) {
+            success = true;
+        } else {
+            unloaded = true;
+            break;
+        }
+    }
+
+    if (!success) {
+        Log::Write(Log::Level::Error, L"FreeLibrary failed: %lu", GetLastError());
+    }
+    else if (unloaded) {
+        Log::Write(Log::Level::Info, L"Module unloaded after %d attempts", i);
+    }
+    else
+    {
+        Log::Write(Log::Level::Warn, L"Module is still loaded after %d FreeLibrary attempts", i);
+    }
+    
+    return success;
+}
+
 std::vector<ModuleInfo> GetLoadedModules() {
     std::vector<ModuleInfo> items;
 
