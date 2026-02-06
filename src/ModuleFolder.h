@@ -12,6 +12,10 @@ static constexpr wchar_t kModuleFolderClsidString[] = L"{6B4E2E3B-3D6B-4D4E-9A1C
 static constexpr wchar_t kModuleFolderDisplayName[] = L"Explorer Modules";
 static constexpr wchar_t kModuleFolderClassName[] = L"ExplorerModulesNamespace.ModuleFolder";
 
+// The parent folder where this extension is rooted. Currently "My Computer".
+// GUID: {20D04FE0-3AEA-1069-A2D8-08002B30309D}
+static constexpr wchar_t kNamespaceParentParsingName[] = L"::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
+
 class ModuleFolder final
     : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
         IShellFolder, // Communication channel between Explorer and the namespace extension

@@ -1,5 +1,6 @@
 #include "ModuleFolder.h"
 #include "Log.h"
+#include "DllNotification.h"
 
 #include <shlobj.h>
 #include <strsafe.h>
@@ -211,6 +212,11 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         g_module = module;
         Microsoft::WRL::Module<Microsoft::WRL::InProc>::GetModule().Create();
         DisableThreadLibraryCalls(module);
+        InitializeDllNotification();
+    }
+    else if (reason == DLL_PROCESS_DETACH) {
+        ShutdownDllNotification();
+        Microsoft::WRL::Module<Microsoft::WRL::InProc>::GetModule().Terminate();
     }
     return TRUE;
 }
