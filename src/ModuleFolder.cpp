@@ -41,43 +41,6 @@ HRESULT MakeStrRet(const wchar_t* value, STRRET* result) {
     return S_OK;
 }
 
-struct ModuleItem {
-    std::wstring path;
-    void* baseAddress;
-    DWORD size;
-};
-
-std::vector<ModuleItem> GetModuleItems() {
-    std::vector<ModuleItem> items;
-
-    HMODULE modules[1024] = {};
-    DWORD needed = 0;
-    if (!EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed)) {
-        Log::Write(Log::Level::Error, L"EnumProcessModules failed: %lu", GetLastError());
-        return items;
-    }
-
-    DWORD count = needed / sizeof(HMODULE);
-    if (count > ARRAYSIZE(modules)) {
-        count = ARRAYSIZE(modules);
-    }
-    Log::Write(Log::Level::Info, L"Enumerating %lu modules", count);
-    for (DWORD i = 0; i < count; ++i) {
-        wchar_t path[MAX_PATH] = {};
-        if (GetModuleFileNameW(modules[i], path, ARRAYSIZE(path))) {
-            MODULEINFO info = {};
-            if (GetModuleInformation(GetCurrentProcess(), modules[i], &info, sizeof(info))) {
-                 items.push_back({path, info.lpBaseOfDll, info.SizeOfImage});
-                 Log::Write(Log::Level::Trace, L"Module: %s Base=%p Size=%u", path, info.lpBaseOfDll, info.SizeOfImage);
-            } else {
-                 items.push_back({path, modules[i], 0});
-                 Log::Write(Log::Level::Warn, L"GetModuleInformation failed for: %s", path);
-            }
-        }
-    }
-
-    return items;
-}
 
 std::vector<std::wstring> ExtractDropPaths(IDataObject* dataObject) {
     std::vector<std::wstring> paths;
@@ -358,7 +321,7 @@ IFACEMETHODIMP ModuleFolder::EnumObjects(HWND, SHCONTF flags, IEnumIDList** enum
     }
 
     std::vector<PIDLIST_RELATIVE> items;
-    auto moduleItems = GetModuleItems();
+    auto moduleItems = ModuleHelpers::GetLoadedModules();
     items.reserve(moduleItems.size());
     for (const auto& item : moduleItems) {
         auto pidl = Pidl::CreateFromPath(item.path, item.baseAddress, item.size);
