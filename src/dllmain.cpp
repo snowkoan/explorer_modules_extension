@@ -118,8 +118,9 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
         &shellFolderKey,
         nullptr));
     if (SUCCEEDED(shellHr)) {
-        SetDwordValue(shellFolderKey, L"Attributes", 0xF080004D);
-        SetDwordValue(shellFolderKey, L"FolderValueFlags", 0x28);
+        SetDwordValue(shellFolderKey, L"Attributes",
+            SFGAO_FOLDER | SFGAO_FILESYSANCESTOR | SFGAO_DROPTARGET | SFGAO_CANLINK | SFGAO_CANCOPY);
+        SetDwordValue(shellFolderKey, L"FolderValueFlags", FWF_DESKTOP);
         RegCloseKey(shellFolderKey);
     }
 

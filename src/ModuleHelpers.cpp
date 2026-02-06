@@ -56,6 +56,7 @@ bool UnloadLibrary(void* baseAddress) {
     else
     {
         Log::Write(Log::Level::Warn, L"Module is still loaded after %d FreeLibrary attempts", i);
+        success = false;
     }
     
     return success;
