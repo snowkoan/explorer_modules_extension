@@ -2,4 +2,4 @@
 
 #define IDI_PLACEHOLDER 1
 
-IDI_PLACEHOLDER ICON "placeholder.ico"
+IDI_PLACEHOLDER ICON "app.ico"
