@@ -14,9 +14,9 @@ static constexpr wchar_t kModuleFolderClassName[] = L"ExplorerModulesNamespace.M
 
 class ModuleFolder final
     : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
-        IShellFolder,
-        IShellFolder2,
-        IPersistFolder,
+        IShellFolder, // Communication channel between Explorer and the namespace extension
+        IShellFolder2, // Extended IShellFolder with more features
+        IPersistFolder, // Required for namespace extension initialization
         IPersistFolder2,
         IShellFolderViewCB,
         IDropTarget> {

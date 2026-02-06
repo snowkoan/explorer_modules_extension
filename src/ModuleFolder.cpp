@@ -4,6 +4,7 @@
 #include "IidNames.h"
 #include "Log.h"
 #include "Pidl.h"
+#include "ModuleHelpers.h"
 
 #include <propkey.h>
 #include <psapi.h>
@@ -126,13 +127,24 @@ std::vector<std::wstring> ExtractDropPaths(IDataObject* dataObject) {
     return paths;
 }
 
-void LoadLibraryPaths(const std::vector<std::wstring>& paths);
+struct ContextMenuItemData {
+    std::wstring path;
+    void* baseAddress;
+};
 
 class ItemContextMenu final
     : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IContextMenu3, IContextMenu2, IContextMenu> {
 public:
-    explicit ItemContextMenu(std::vector<std::wstring> paths)
-        : paths_(std::move(paths)) {}
+    explicit ItemContextMenu(std::vector<ContextMenuItemData> items, PIDLIST_ABSOLUTE folderPidl)
+        : items_(std::move(items)) {
+        folderPidl_ = folderPidl ? ILCloneFull(folderPidl) : nullptr;
+    }
+
+    ~ItemContextMenu() {
+        if (folderPidl_) {
+            ILFree(folderPidl_);
+        }
+    }
 
     IFACEMETHODIMP QueryContextMenu(HMENU menu, UINT index, UINT idCmdFirst, UINT idCmdLast, UINT flags) override {
         if (!menu) {
@@ -149,6 +161,7 @@ public:
 
         InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdExplore, L"Explore to parent folder");
         InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdProperties, L"Properties");
+        InsertMenuW(menu, index++, MF_BYPOSITION | MF_STRING, id + kCmdUnload, L"Unload");
         
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, kCmdCount);
     }
@@ -166,6 +179,8 @@ public:
                 cmd = kCmdExplore;
             } else if (lstrcmpiA(verb, "properties") == 0) {
                 cmd = kCmdProperties;
+            } else if (lstrcmpiA(verb, "unload") == 0) {
+                cmd = kCmdUnload;
             } else {
                 return E_FAIL;
             }
@@ -175,8 +190,8 @@ public:
 
         switch (cmd) {
         case kCmdExplore:
-            for (const auto& path : paths_) {
-                PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(path.c_str());
+            for (const auto& item : items_) {
+                PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(item.path.c_str());
                 if (pidl) {
                     SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
                     ILFree(pidl);
@@ -184,10 +199,28 @@ public:
             }
             break;
         case kCmdProperties:
-            for (const auto& path : paths_) {
-                SHObjectProperties(nullptr, SHOP_FILEPATH, path.c_str(), nullptr);
+            for (const auto& item : items_) {
+                SHObjectProperties(nullptr, SHOP_FILEPATH, item.path.c_str(), nullptr);
             }
             break;
+        case kCmdUnload: {
+            bool refresh = false;
+            for (const auto& item : items_) {
+                if (item.baseAddress) {
+                    // HMODULE is a handle to the module. This is the base address of the module in memory.
+                    Log::Write(Log::Level::Info, L"Unloading module at %p: %s", item.baseAddress, item.path.c_str());
+                    if (FreeLibrary(static_cast<HMODULE>(item.baseAddress))) {
+                         refresh = true;
+                    } else {
+                         Log::Write(Log::Level::Error, L"FreeLibrary failed: %lu", GetLastError());
+                    }
+                }
+            }
+            if (refresh && folderPidl_) {
+                SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_IDLIST, folderPidl_, nullptr);
+            }
+            break;
+        }
         default:
             return E_FAIL;
         }
@@ -204,6 +237,8 @@ public:
             return HandleString(type, name, cchMax, "explore", L"explore", "Open parent folder.", L"Open parent folder.");
         case kCmdProperties:
             return HandleString(type, name, cchMax, "properties", L"properties", "Show properties.", L"Show properties.");
+        case kCmdUnload:
+            return HandleString(type, name, cchMax, "unload", L"unload", "Unload the module.", L"Unload the module.");
         default:
             return E_INVALIDARG;
         }
@@ -238,28 +273,13 @@ private:
     enum : UINT {
         kCmdExplore = 0,
         kCmdProperties = 1,
-        kCmdCount = 2
+        kCmdUnload = 2,
+        kCmdCount = 3
     };
 
-    std::vector<std::wstring> paths_;
+    std::vector<ContextMenuItemData> items_;
+    PIDLIST_ABSOLUTE folderPidl_ = nullptr;
 };
-
-void LoadLibraryPaths(const std::vector<std::wstring>& paths) {
-    for (const auto& path : paths) {
-        HMODULE module = LoadLibraryW(path.c_str());
-        if (!module) {
-            DWORD error = GetLastError();
-            Log::Write(Log::Level::Error, L"LoadLibrary failed: %s (%lu)", path.c_str(), error);
-            wchar_t message[1024] = {};
-            StringCchPrintfW(message, ARRAYSIZE(message),
-                L"LoadLibrary failed.\nPath: %s\nError: %lu", path.c_str(), error);
-            MessageBoxW(nullptr, message, L"Explorer Modules", MB_ICONERROR | MB_OK);
-            continue;
-        }
-        Log::Write(Log::Level::Info, L"LoadLibrary succeeded: %s", path.c_str());
-        FreeLibrary(module);
-    }
-}
 
 bool SupportsDropFormat(IDataObject* dataObject) {
     if (!dataObject) {
@@ -276,7 +296,7 @@ bool SupportsDropFormat(IDataObject* dataObject) {
 
 ModuleFolder::ModuleFolder() {
     rootPidl_ = nullptr;
-    Log::Write(Log::Level::Info, L"ModuleFolder constructed");
+    // Log::Write(Log::Level::Info, L"ModuleFolder constructed");
 }
 
 IFACEMETHODIMP ModuleFolder::GetClassID(CLSID* classId) {
@@ -309,16 +329,17 @@ IFACEMETHODIMP ModuleFolder::GetCurFolder(PIDLIST_ABSOLUTE* pidl) {
     if (!pidl) {
         return E_POINTER;
     }
+    *pidl = nullptr;
     if (!rootPidl_) {
         Log::Write(Log::Level::Warn, L"GetCurFolder called without root PIDL");
-        *pidl = nullptr;
-        return E_FAIL;
+        return S_FALSE;
     }
     *pidl = ILCloneFull(rootPidl_);
     if (!*pidl) {
         Log::Write(Log::Level::Error, L"GetCurFolder: out of memory");
+        return E_OUTOFMEMORY;
     }
-    return *pidl ? S_OK : E_OUTOFMEMORY;
+    return S_OK;
 }
 
 IFACEMETHODIMP ModuleFolder::ParseDisplayName(HWND, IBindCtx*, LPWSTR, ULONG*, PIDLIST_RELATIVE*, ULONG*) {
@@ -522,25 +543,26 @@ IFACEMETHODIMP ModuleFolder::GetUIObjectOf(HWND, UINT cidl, PCUITEMID_CHILD_ARRA
         return S_OK;
     }
     if (cidl > 0 && (IsEqualIID(riid, IID_IContextMenu) || IsEqualIID(riid, IID_IContextMenu2) || IsEqualIID(riid, IID_IContextMenu3))) {
-        std::vector<std::wstring> paths;
-        paths.reserve(cidl);
+        std::vector<ContextMenuItemData> items;
+        items.reserve(cidl);
         for (UINT i = 0; i < cidl; ++i) {
             if (!Pidl::IsOurPidl(apidl[i])) {
                 Log::Write(Log::Level::Warn, L"GetUIObjectOf: PIDL %u is not ours", i);
                 continue;
             }
             auto path = Pidl::GetPath(apidl[i]);
+            auto baseAddress = Pidl::GetBaseAddress(apidl[i]);
             if (!path.empty()) {
-                paths.push_back(std::move(path));
+                items.push_back({ std::move(path), baseAddress });
             } else {
                 Log::Write(Log::Level::Warn, L"GetUIObjectOf: PIDL %u has empty path", i);
             }
         }
-        if (paths.empty()) {
-            Log::Write(Log::Level::Error, L"GetUIObjectOf: No valid paths found");
+        if (items.empty()) {
+            Log::Write(Log::Level::Error, L"GetUIObjectOf: No valid items found");
             return E_FAIL;
         }
-        auto menu = Microsoft::WRL::Make<ItemContextMenu>(std::move(paths));
+        auto menu = Microsoft::WRL::Make<ItemContextMenu>(std::move(items), rootPidl_);
         if (!menu) {
             return E_OUTOFMEMORY;
         }
@@ -775,7 +797,7 @@ IFACEMETHODIMP ModuleFolder::Drop(IDataObject* dataObject, DWORD, POINTL, DWORD*
     auto paths = ExtractDropPaths(dataObject);
     Log::Write(Log::Level::Info, L"Drop received %zu paths", paths.size());
     if (!paths.empty()) {
-        LoadLibraryPaths(paths);
+        ModuleHelpers::LoadModulesIf(paths);
     }
     return S_OK;
 }

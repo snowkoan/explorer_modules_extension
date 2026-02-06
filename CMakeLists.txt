@@ -8,6 +8,7 @@ add_library(ExplorerModulesNamespace SHARED
     src/IidNames.cpp
     src/Log.cpp
     src/ModuleFolder.cpp
+    src/ModuleHelpers.cpp
     src/Pidl.cpp
     src/EnumIDList.cpp
     resources/namespace.rc

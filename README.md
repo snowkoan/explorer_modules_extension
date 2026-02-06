@@ -86,8 +86,8 @@ Contributions are welcome! Please check out our [CONTRIBUTING.md](docs/CONTRIBUT
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## Further Reading
 
-If you encounter issues or have questions:
--   Check the [Issues](https://github.com/snowkoan/explorer_modules_extension/issues) page.
--   Open a new issue if you find a bug.
+[The Complete Idiot's Guide to Writing Namespace Extensions - Part I
+](https://www.codeproject.com/articles/The-Complete-Idiot-s-Guide-to-Writing-Namespace-Ex)
+
