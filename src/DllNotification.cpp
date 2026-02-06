@@ -61,7 +61,7 @@ namespace {
     LdrRegisterDllNotification_t g_LdrRegisterDllNotification = nullptr;
     LdrUnregisterDllNotification_t g_LdrUnregisterDllNotification = nullptr;
     
-    void RefreshWindow() {
+    void RefreshWindowThread() {
         // CoInitialize is required for many Shell APIs, though SHChangeNotify might not strictly require it, 
         // relying on parsing definitely does if it involves COM objects.
         HRESULT hr = CoInitialize(nullptr);
@@ -101,8 +101,8 @@ namespace {
             NotificationReason == LDR_DLL_NOTIFICATION_REASON_UNLOADED) {
             
             // Execute the refresh on a separate thread to avoid deadlock issues 
-            // since this callback is invoked with the Loader Lock held.
-            std::thread t(RefreshWindow);
+            // "It is unsafe for the notification callback to call functions in ANY other module other than itself."
+            std::thread t(RefreshWindowThread);
             t.detach();
         }
     }
