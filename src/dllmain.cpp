@@ -144,9 +144,8 @@ HRESULT RegisterClsid(const wchar_t* modulePath) {
 
     ScopedKey shellFolderKey;
     if (RegCreateKeyExW(classKey, L"ShellFolder", 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &shellFolderKey, nullptr) == ERROR_SUCCESS) {
-        SetDwordValue(shellFolderKey, L"Attributes",
-            SFGAO_FOLDER | SFGAO_FILESYSANCESTOR | SFGAO_DROPTARGET | SFGAO_CANLINK | SFGAO_CANCOPY);
-        SetDwordValue(shellFolderKey, L"FolderValueFlags", FWF_DESKTOP);
+        SetDwordValue(shellFolderKey, L"Attributes", SFGAO_FOLDER | SFGAO_DROPTARGET);
+        SetDwordValue(shellFolderKey, L"FolderValueFlags", FWF_NOSUBFOLDERS);
     }
 
     ScopedKey iconKey;
