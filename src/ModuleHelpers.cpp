@@ -44,8 +44,17 @@ ImageInfo GetImageInfo(const std::wstring& path) {
                      if (VerQueryValueW(buffer.data(), subBlock, &bufferValue, &len)) {
                          info.fileVersion = static_cast<wchar_t*>(bufferValue);
                      }
+
+                     // FileDescription
+                     StringCchPrintfW(subBlock, ARRAYSIZE(subBlock),
+                        L"\\StringFileInfo\\%04x%04x\\FileDescription",
+                        lpTranslate[i].wLanguage,
+                        lpTranslate[i].wCodePage);
+                     if (VerQueryValueW(buffer.data(), subBlock, &bufferValue, &len)) {
+                         info.description = static_cast<wchar_t*>(bufferValue);
+                     }
                      
-                     if (!info.companyName.empty() || !info.fileVersion.empty()) break; 
+                     if (!info.companyName.empty() || !info.fileVersion.empty() || !info.description.empty()) break; 
                  }
             }
         }

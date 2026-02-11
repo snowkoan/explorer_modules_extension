@@ -23,7 +23,8 @@ constexpr UINT kColumnPath = 3;
 constexpr UINT kColumnCompany = 4;
 constexpr UINT kColumnVersion = 5;
 constexpr UINT kColumnMachine = 6;
-constexpr UINT kColumnCount = 7;
+constexpr UINT kColumnDescription = 7;
+constexpr UINT kColumnCount = 8;
 
 UINT CF_SHELLIDLIST() {
     static UINT format = RegisterClipboardFormatW(CFSTR_SHELLIDLIST);
@@ -642,6 +643,8 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
             return MakeStrRet(L"Version", &details->str);
         case kColumnMachine:
             return MakeStrRet(L"Architecture", &details->str);
+        case kColumnDescription:
+            return MakeStrRet(L"Description", &details->str);
         default:
             return E_INVALIDARG;
         }
@@ -688,6 +691,10 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
     case kColumnMachine: {
         auto info = ModuleHelpers::GetImageInfo(path);
         return MakeStrRet(info.machineType.c_str(), &details->str);
+    }
+    case kColumnDescription: {
+        auto info = ModuleHelpers::GetImageInfo(path);
+        return MakeStrRet(info.description.c_str(), &details->str);
     }
     default:
         return E_INVALIDARG;

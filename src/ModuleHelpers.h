@@ -13,6 +13,7 @@ struct ModuleInfo {
 
 struct ImageInfo {
     std::wstring companyName;
+    std::wstring description;
     std::wstring fileVersion;
     std::wstring machineType;
 };
