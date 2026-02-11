@@ -680,21 +680,21 @@ IFACEMETHODIMP ModuleFolder::GetDetailsOf(PCUITEMID_CHILD pidl, UINT column, SHE
     case kColumnPath: {
         return MakeStrRet(path.c_str(), &details->str);
     }
-    case kColumnCompany: {
-        auto info = ModuleHelpers::GetImageInfo(path);
-        return MakeStrRet(info.companyName.c_str(), &details->str);
-    }
-    case kColumnVersion: {
-        auto info = ModuleHelpers::GetImageInfo(path);
-        return MakeStrRet(info.fileVersion.c_str(), &details->str);
-    }
-    case kColumnMachine: {
-        auto info = ModuleHelpers::GetImageInfo(path);
-        return MakeStrRet(info.machineType.c_str(), &details->str);
-    }
+    case kColumnCompany:
+    case kColumnVersion:
+    case kColumnMachine:
     case kColumnDescription: {
-        auto info = ModuleHelpers::GetImageInfo(path);
-        return MakeStrRet(info.description.c_str(), &details->str);
+        auto it = imageInfoCache_.find(path);
+        if (it == imageInfoCache_.end()) {
+            it = imageInfoCache_.emplace(path, ModuleHelpers::GetImageInfo(path)).first;
+        }
+        const auto& info = it->second;
+
+        if (column == kColumnCompany) return MakeStrRet(info.companyName.c_str(), &details->str);
+        if (column == kColumnVersion) return MakeStrRet(info.fileVersion.c_str(), &details->str);
+        if (column == kColumnMachine) return MakeStrRet(info.machineType.c_str(), &details->str);
+        if (column == kColumnDescription) return MakeStrRet(info.description.c_str(), &details->str);
+        return E_FAIL;
     }
     default:
         return E_INVALIDARG;

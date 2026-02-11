@@ -3,6 +3,9 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <wrl.h>
+#include <map>
+#include <string>
+#include "ModuleHelpers.h"
 
 // {6B4E2E3B-3D6B-4D4E-9A1C-0F0C8D8E8F11}
 static const CLSID CLSID_ModuleFolder =
@@ -74,4 +77,5 @@ public:
 private:
     PIDLIST_ABSOLUTE rootPidl_ = nullptr;
     bool canDrop_ = false;
+    std::map<std::wstring, ModuleHelpers::ImageInfo> imageInfoCache_;
 };
