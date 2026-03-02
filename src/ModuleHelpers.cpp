@@ -131,35 +131,35 @@ int LoadModulesIf(const std::vector<std::wstring>& paths) {
 bool UnloadLibrary(void* baseAddress) {
     if (!baseAddress) return false;
     
-    bool success = false;
-    bool unloaded = false;
     HMODULE hModule = static_cast<HMODULE>(baseAddress);
+    wchar_t path[MAX_PATH] = {};
+    if (GetModuleFileNameW(hModule, path, ARRAYSIZE(path)) == 0) {
+        Log::Write(Log::Level::Warn, L"UnloadLibrary: GetModuleFileNameW failed, cannot verify unload");
+        return false;
+    }
 
-    // Call FreeLibrary repeatedly to decrement reference count until it hits zero,
-    // or until we hit a safety limit.
+    bool unloaded = false;
     int i = 0;
     for (i = 0; i < 100; ++i) {
-        if (FreeLibrary(hModule)) {
-            success = true;
-        } else {
+        // Don't rely on FreeLibrary return value, just call it
+        FreeLibrary(hModule);
+        
+        // Explicitly check if the module is still loaded by name
+        if (GetModuleHandleW(path) == nullptr) {
             unloaded = true;
             break;
         }
     }
 
-    if (!success) {
-        Log::Write(Log::Level::Error, L"FreeLibrary failed: %lu", GetLastError());
-    }
-    else if (unloaded) {
-        Log::Write(Log::Level::Info, L"Module unloaded after %d attempts", i);
+    if (unloaded) {
+        Log::Write(Log::Level::Info, L"Module unloaded after %d attempts", i + 1);
     }
     else
     {
         Log::Write(Log::Level::Warn, L"Module is still loaded after %d FreeLibrary attempts", i);
-        success = false;
     }
     
-    return success;
+    return unloaded;
 }
 
 std::vector<ModuleInfo> GetLoadedModules() {
