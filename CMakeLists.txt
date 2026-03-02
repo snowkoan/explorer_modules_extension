@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 project(ExplorerModulesNamespace LANGUAGES CXX RC)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # This has to be set before the first call to add_library() (!)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 

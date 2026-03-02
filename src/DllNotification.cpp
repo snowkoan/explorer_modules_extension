@@ -8,8 +8,11 @@
 #include <shlobj.h>
 #include <thread>
 #include <string>
+#include <shared_mutex>
+#include <mutex>
 
 namespace {
+    std::shared_mutex g_notificationMutex;
     PVOID g_notificationCookie = nullptr;
     LdrRegisterDllNotification_t g_LdrRegisterDllNotification = nullptr;
     LdrUnregisterDllNotification_t g_LdrUnregisterDllNotification = nullptr;
@@ -62,6 +65,13 @@ namespace {
 }
 
 void InitializeDllNotification() {
+    std::unique_lock<std::shared_mutex> lock(g_notificationMutex);
+    
+    if (g_notificationCookie != nullptr) {
+        // Already registered
+        return;
+    }
+
     HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
     if (!hNtdll) {
         Log::Write(Log::Level::Error, L"Could not get handle to ntdll.dll");
@@ -85,6 +95,7 @@ void InitializeDllNotification() {
 }
 
 void ShutdownDllNotification() {
+    std::unique_lock<std::shared_mutex> lock(g_notificationMutex);
     if (g_notificationCookie && g_LdrUnregisterDllNotification) {
         g_LdrUnregisterDllNotification(g_notificationCookie);
         g_notificationCookie = nullptr;

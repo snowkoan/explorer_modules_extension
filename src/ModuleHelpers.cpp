@@ -63,31 +63,39 @@ ImageInfo GetImageInfo(const std::wstring& path) {
     // Machine Type - Read PE Header
     HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (hFile != INVALID_HANDLE_VALUE) {
-        HANDLE hMap = CreateFileMappingW(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
-        if (hMap) {
-            void* pBase = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
-            if (pBase) {
-                PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)pBase;
-                if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE) {
-                    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)pBase + dosHeader->e_lfanew);
-                    if (ntHeaders->Signature == IMAGE_NT_SIGNATURE) {
-                        switch (ntHeaders->FileHeader.Machine) {
-                        case IMAGE_FILE_MACHINE_I386: info.machineType = L"x86"; break;
-                        case IMAGE_FILE_MACHINE_AMD64: info.machineType = L"x64"; break;
-                        case IMAGE_FILE_MACHINE_ARM: info.machineType = L"ARM"; break;
-                        case IMAGE_FILE_MACHINE_ARM64: info.machineType = L"ARM64"; break;
-                        default: {
-                            wchar_t buf[32];
-                            StringCchPrintfW(buf, ARRAYSIZE(buf), L"0x%04X", ntHeaders->FileHeader.Machine);
-                            info.machineType = buf;
-                            break;
-                        }
+        LARGE_INTEGER liSize;
+        if (GetFileSizeEx(hFile, &liSize) && liSize.QuadPart > sizeof(IMAGE_DOS_HEADER)) {
+            HANDLE hMap = CreateFileMappingW(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+            if (hMap) {
+                void* pBase = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+                if (pBase) {
+                    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)pBase;
+                    if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE) {
+                        // Check if e_lfanew is within bounds
+                        if (dosHeader->e_lfanew > 0 && 
+                            dosHeader->e_lfanew < liSize.QuadPart - sizeof(IMAGE_NT_HEADERS)) {
+                            
+                            PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)pBase + dosHeader->e_lfanew);
+                            if (ntHeaders->Signature == IMAGE_NT_SIGNATURE) {
+                                switch (ntHeaders->FileHeader.Machine) {
+                                case IMAGE_FILE_MACHINE_I386: info.machineType = L"x86"; break;
+                                case IMAGE_FILE_MACHINE_AMD64: info.machineType = L"x64"; break;
+                                case IMAGE_FILE_MACHINE_ARM: info.machineType = L"ARM"; break;
+                                case IMAGE_FILE_MACHINE_ARM64: info.machineType = L"ARM64"; break;
+                                default: {
+                                    wchar_t buf[32];
+                                    StringCchPrintfW(buf, ARRAYSIZE(buf), L"0x%04X", ntHeaders->FileHeader.Machine);
+                                    info.machineType = buf;
+                                    break;
+                                }
+                                }
+                            }
                         }
                     }
+                    UnmapViewOfFile(pBase);
                 }
-                UnmapViewOfFile(pBase);
+                CloseHandle(hMap);
             }
-            CloseHandle(hMap);
         }
         CloseHandle(hFile);
     }

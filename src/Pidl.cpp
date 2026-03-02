@@ -24,6 +24,13 @@ const wchar_t* GetPathStart(PCUIDLIST_RELATIVE pidl) {
 PIDLIST_RELATIVE AllocatePidl(size_t variableDataSize) {
     const size_t dataSize = sizeof(PidlData) + variableDataSize;
     constexpr size_t cbSize = sizeof(USHORT);
+
+    // Validate size fits in USHORT (mkid.cb)
+    if (cbSize + dataSize > 0xFFF0) { // Leave a small margin below 0xFFFF
+        Log::Write(Log::Level::Error, L"AllocatePidl: item size too large (%zu)", cbSize + dataSize);
+        return nullptr;
+    }
+
     const size_t totalSize = cbSize + dataSize + sizeof(USHORT); // cb + data + null terminator (for next item 0)
     
     auto pidl = static_cast<PIDLIST_RELATIVE>(CoTaskMemAlloc(totalSize));
