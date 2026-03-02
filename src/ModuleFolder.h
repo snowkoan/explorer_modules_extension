@@ -42,17 +42,36 @@ public:
     IFACEMETHODIMP GetCurFolder(PIDLIST_ABSOLUTE* pidl) override;
 
     // IShellFolder
+    /// @brief Translates a display name into an item identifier list.
     IFACEMETHODIMP ParseDisplayName(HWND hwnd, IBindCtx* bindCtx, LPWSTR displayName,
         ULONG* eaten, PIDLIST_RELATIVE* pidl, ULONG* attributes) override;
+    
+    /// @brief Allows a client to determine the contents of a folder by creating an item identifier enumeration object.
     IFACEMETHODIMP EnumObjects(HWND hwnd, SHCONTF flags, IEnumIDList** enumIdList) override;
+    
+    /// @brief Retrieves a handler, typically the Shell folder object that implements IShellFolder for a particular item.
     IFACEMETHODIMP BindToObject(PCUIDLIST_RELATIVE pidl, IBindCtx* bindCtx, REFIID riid, void** ppv) override;
+    
+    /// @brief Requests a pointer to an object's storage interface.
     IFACEMETHODIMP BindToStorage(PCUIDLIST_RELATIVE pidl, IBindCtx* bindCtx, REFIID riid, void** ppv) override;
+    
+    /// @brief Determines the relative order of two file objects or folders, given their item identifier lists.
     IFACEMETHODIMP CompareIDs(LPARAM lParam, PCUIDLIST_RELATIVE pidl1, PCUIDLIST_RELATIVE pidl2) override;
+    
+    /// @brief Requests an object that can be used to obtain information from or interact with a folder object.
     IFACEMETHODIMP CreateViewObject(HWND hwnd, REFIID riid, void** ppv) override;
+    
+    /// @brief Retrieves the attributes of one or more file objects or subfolders.
     IFACEMETHODIMP GetAttributesOf(UINT cidl, PCUITEMID_CHILD_ARRAY apidl, SFGAOF* rgfInOut) override;
+    
+    /// @brief Gets an object that can be used to carry out actions on the specified file objects or folders.
     IFACEMETHODIMP GetUIObjectOf(HWND hwnd, UINT cidl, PCUITEMID_CHILD_ARRAY apidl,
         REFIID riid, UINT* rgfReserved, void** ppv) override;
+    
+    /// @brief Retrieves the display name for the specified file object or subfolder.
     IFACEMETHODIMP GetDisplayNameOf(PCUITEMID_CHILD pidl, SHGDNF flags, STRRET* name) override;
+    
+    /// @brief Sets the display name of a file object or subfolder, changing the item identifier in the process.
     IFACEMETHODIMP SetNameOf(HWND hwnd, PCUITEMID_CHILD pidl, LPCWSTR name, SHGDNF flags,
         PITEMID_CHILD* newPidl) override;
 
@@ -73,6 +92,14 @@ public:
 
     // IShellFolderViewCB
     IFACEMETHODIMP MessageSFVCB(UINT msg, WPARAM wParam, LPARAM lParam) override;
+
+    const ModuleHelpers::ImageInfo& GetImageInfo(const std::wstring& path) {
+        auto it = imageInfoCache_.find(path);
+        if (it == imageInfoCache_.end()) {
+            it = imageInfoCache_.emplace(path, ModuleHelpers::GetImageInfo(path)).first;
+        }
+        return it->second;
+    }
 
 private:
     PIDLIST_ABSOLUTE rootPidl_ = nullptr;

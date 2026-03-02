@@ -11,6 +11,19 @@
 namespace Pidl {
 constexpr DWORD kSignature = 0x4C444F4D; // 'MODL'
 
+// Define the binary structure of our PIDL explicitly.
+// #pragma pack(1) ensures no padding bytes are inserted by the compiler.
+#pragma pack(push, 1)
+struct PidlData {
+    DWORD signature;
+    UINT64 baseAddress;
+    DWORD size;
+    // Variable length path string follows this struct
+};
+#pragma pack(pop)
+
+static_assert(sizeof(PidlData) == 16, "PidlData size mismatch");
+
 PIDLIST_ABSOLUTE CreateRoot();
 PIDLIST_RELATIVE CreateFromPath(const std::wstring& path, void* baseAddress, DWORD size);
 PIDLIST_RELATIVE Clone(PCUIDLIST_RELATIVE pidl);

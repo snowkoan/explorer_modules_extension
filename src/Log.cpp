@@ -15,6 +15,8 @@ const wchar_t* LevelToString(Level level) {
         return L"WARN";
     case Level::Error:
         return L"ERROR";
+    case Level::Critical:
+        return L"CRITICAL";
     default:
         return L"LOG";
     }

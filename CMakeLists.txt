@@ -9,6 +9,7 @@ add_library(ExplorerModulesNamespace SHARED
     src/dllmain.cpp
     src/ClassFactory.cpp
     src/DllNotification.cpp
+    src/ItemContextMenu.cpp
     src/IidNames.cpp
     src/Log.cpp
     src/ModuleFolder.cpp

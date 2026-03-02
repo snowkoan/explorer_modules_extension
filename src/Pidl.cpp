@@ -8,19 +8,6 @@
 namespace Pidl {
 namespace {
 
-// Define the binary structure of our PIDL explicitly.
-// #pragma pack(1) ensures no padding bytes are inserted by the compiler.
-#pragma pack(push, 1)
-struct PidlData {
-    DWORD signature;
-    UINT64 baseAddress;
-    DWORD size;
-    // Variable length path string follows this struct
-};
-#pragma pack(pop)
-
-static_assert(sizeof(PidlData) == 16, "PidlData size mismatch");
-
 // Helper to get pointer to the PidlData struct from a PIDL
 const PidlData* GetData(PCUIDLIST_RELATIVE pidl) {
     if (!pidl) return nullptr;
