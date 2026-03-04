@@ -1,0 +1,5 @@
+BasedOnStyle: Google
+BreakBeforeBraces: Allman 		# Brace on next line
+BinPackParameters: false 		# Parameters get their own line
+BinPackArguments: false  		# Arguments get their own line
+ColumnLimit: 110
